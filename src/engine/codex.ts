@@ -49,6 +49,11 @@ export function createCodexEngine(config: CodexEngineConfig): Engine {
 
       const model = request.model ?? config.model;
       if (model) args.push('--model', model);
+
+      // Codex defaults to xhigh reasoning, which is far slower than a review turn needs.
+      const effort = request.effort ?? config.effort;
+      if (effort) args.push('--config', `model_reasoning_effort="${effort}"`);
+
       for (const override of config.configOverrides) args.push('--config', override);
       args.push(...config.extraArgs);
 

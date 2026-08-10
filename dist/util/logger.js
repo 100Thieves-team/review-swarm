@@ -33,4 +33,21 @@ export function group(title, fn) {
             process.stdout.write('::endgroup::\n');
     });
 }
+/**
+ * Time a stage, log its duration and record it.
+ *
+ * Wall-clock per stage is the only way to tell whether a slow run was the expert
+ * fan-out, the verifier or the mediator — without it, tuning is guesswork.
+ */
+export async function timedStage(title, timings, logger, fn) {
+    const startedAt = Date.now();
+    try {
+        return await group(title, fn);
+    }
+    finally {
+        const elapsed = Date.now() - startedAt;
+        timings[title] = elapsed;
+        logger.info(`stage "${title}" ${(elapsed / 1000).toFixed(1)}s`);
+    }
+}
 //# sourceMappingURL=logger.js.map

@@ -18,7 +18,7 @@ export async function runDebates(options) {
     if (pairs.length === 0)
         return;
     logger.info(`debate: ${pairs.length} conflicting pair(s)`);
-    const { engine, model, timeoutMs } = pool.resolve(config.debate);
+    const { engine, model, effort, timeoutMs } = pool.resolve(config.debate);
     await mapLimit(pairs, Math.max(1, Math.floor(config.engine.concurrency / 2)), async (pair) => {
         const owner = registry.get(pair.finding.owner);
         const challenger = registry.get(pair.challengerId);
@@ -36,6 +36,7 @@ export async function runDebates(options) {
                 runDir: context.runDir,
                 timeoutMs,
                 ...(model ? { model } : {}),
+                ...(effort ? { effort } : {}),
             });
             if (!response.ok) {
                 logger.warn(`debate ${pair.finding.id}/${speaker.id} failed: ${response.error}`);

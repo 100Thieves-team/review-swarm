@@ -17,7 +17,7 @@ import { publishReview, type PublishResult } from './publish/publish.ts';
 import { renderSummary } from './publish/render.ts';
 import type { Finding, PullRequestInfo } from './types.ts';
 import { shortId } from './util/text.ts';
-import { createLogger, group, type Logger } from './util/logger.ts';
+import { createLogger, timedStage, type Logger } from './util/logger.ts';
 
 export interface ReviewOptions {
   owner: string;
@@ -56,6 +56,7 @@ export async function runReview(options: ReviewOptions): Promise<ReviewRunResult
   const logger = options.logger ?? createLogger('swarm');
   const workdir = resolve(options.workdir);
   const degraded: string[] = [];
+  const stageTimings: Record<string, number> = {};
 
   const { config: loaded, path: configPath } = loadConfig(workdir, options.configPath);
   const config = applyOverrides(loaded, options);
@@ -79,7 +80,7 @@ export async function runReview(options: ReviewOptions): Promise<ReviewRunResult
   mkdirSync(runDir, { recursive: true });
   logger.info(`run ${runId} → ${runDir}`);
 
-  const { context, parsed, ignoredFiles } = await group('컨텍스트 수집', () =>
+  const { context, parsed, ignoredFiles } = await timedStage('컨텍스트 수집', stageTimings, logger, () =>
     collectContext({ config, workdir, runDir, runId, pr, ...(options.baseOverride ? { baseOverride: options.baseOverride } : {}), logger }),
   );
   if (ignoredFiles.length > 0) logger.debug(`ignored: ${ignoredFiles.join(', ')}`);
@@ -97,7 +98,7 @@ export async function runReview(options: ReviewOptions): Promise<ReviewRunResult
 
   const pool = new EnginePool(config);
 
-  const results = await group('전문가 병렬 실행', () =>
+  const results = await timedStage('전문가 병렬 실행', stageTimings, logger, () =>
     runExperts({ config, pool, registry, context, blackboard, selected: routing.selected, logger }),
   );
   for (const result of results) {
@@ -108,7 +109,7 @@ export async function runReview(options: ReviewOptions): Promise<ReviewRunResult
   logger.info(`findings: ${results.reduce((n, r) => n + r.findings.length, 0)} raw → ${findings.length} after dedup`);
   persist(runDir, 'findings.json', findings);
 
-  findings = await group('적대적 검증', async () => {
+  findings = await timedStage('적대적 검증', stageTimings, logger, async () => {
     try {
       return await verifyFindings({ config, pool, registry, parsed, context, findings, logger });
     } catch (error) {
@@ -118,7 +119,7 @@ export async function runReview(options: ReviewOptions): Promise<ReviewRunResult
     }
   });
 
-  await group('선택적 토론', async () => {
+  await timedStage('선택적 토론', stageTimings, logger, async () => {
     try {
       await runDebates({ config, pool, registry, parsed, context, findings, selected: routing.selected, logger });
     } catch (error) {
@@ -127,7 +128,7 @@ export async function runReview(options: ReviewOptions): Promise<ReviewRunResult
     }
   });
 
-  const mediation = await group('조정자 판정', () =>
+  const mediation = await timedStage('조정자 판정', stageTimings, logger, () =>
     mediate({ config, pool, registry, context, findings, logger }),
   );
   if (!mediation.ok && mediation.error) degraded.push(`조정자 실패: ${mediation.error}`);
@@ -144,7 +145,7 @@ export async function runReview(options: ReviewOptions): Promise<ReviewRunResult
     `policy: ${outcome.inline.length} inline, ${outcome.summaryOnly.length} summary-only, ${outcome.dropped.length} dropped → ${outcome.event}`,
   );
 
-  const publish = await group('GitHub 게시', () =>
+  const publish = await timedStage('GitHub 게시', stageTimings, logger, () =>
     publishReview({
       config,
       context,
@@ -186,6 +187,8 @@ export async function runReview(options: ReviewOptions): Promise<ReviewRunResult
     errors: publish.errors,
     degraded,
     durationMs,
+    stageTimings,
+    agentTimings: Object.fromEntries(results.map((result) => [result.agentId, result.durationMs])),
   });
 
   return { runId, runDir, outcome, publish, degraded, durationMs };

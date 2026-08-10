@@ -7,13 +7,17 @@ version: 1
 engine:
   # 기본 실행 엔진. 이미 결제한 구독을 그대로 쓴다.
   default: claude # claude | codex | mock
-  concurrency: 4
+  # router.maxAgents보다 작으면 전문가들이 슬롯 대기로 직렬화된다.
+  concurrency: 6
   timeoutMs: 900000
   retries: 1
 
   claude:
     bin: claude
     model: sonnet
+    # low | medium | high | xhigh | max. 비우면 CLI 기본값을 따른다.
+    # 리뷰 속도를 가장 크게 좌우하는 값이다.
+    effort: ''
     # 읽기 전용 도구만 허용한다. 여기에 Bash/Edit를 넣지 마라.
     tools: [Read, Grep, Glob]
     permissionMode: bypassPermissions
@@ -23,6 +27,8 @@ engine:
   codex:
     bin: codex
     model: '' # 비우면 codex의 기본 모델을 쓴다
+    # codex CLI 기본값은 xhigh라 리뷰 한 턴에 수 분이 걸린다. 반드시 낮춰 쓴다.
+    effort: medium
     sandbox: read-only
     ephemeral: true
     extraArgs: []

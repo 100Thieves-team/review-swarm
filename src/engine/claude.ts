@@ -46,6 +46,11 @@ export function createClaudeEngine(config: ClaudeEngineConfig): Engine {
 
       const model = request.model ?? config.model;
       if (model) args.push('--model', model);
+
+      // Reasoning effort dominates wall-clock on exploratory review turns.
+      const effort = request.effort ?? config.effort;
+      if (effort) args.push('--effort', effort);
+
       args.push(...config.extraArgs);
 
       const result = await run(config.bin, args, {

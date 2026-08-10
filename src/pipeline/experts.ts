@@ -31,7 +31,7 @@ export async function runExperts(options: RunExpertsOptions): Promise<ExpertResu
     const prompt = buildExpertPrompt(agent, blackboard, config);
     persist(context.runDir, `prompts/${agentId}.md`, prompt);
 
-    const { engine, model, timeoutMs } = pool.resolve(config.agents[agentId]);
+    const { engine, model, effort, timeoutMs } = pool.resolve(config.agents[agentId]);
     const started = Date.now();
     let lastError = 'unknown error';
 
@@ -47,6 +47,7 @@ export async function runExperts(options: RunExpertsOptions): Promise<ExpertResu
         runDir: context.runDir,
         timeoutMs,
         ...(model ? { model } : {}),
+        ...(effort ? { effort } : {}),
       });
 
       if (response.ok) {
@@ -83,18 +84,27 @@ export async function runExperts(options: RunExpertsOptions): Promise<ExpertResu
   });
 }
 
+/**
+ * Shared context first, persona second.
+ *
+ * Every expert in a run gets a byte-identical prefix this way, which is what lets
+ * the provider serve it from the prompt cache instead of re-reading the whole
+ * blackboard once per persona.
+ */
 export function buildExpertPrompt(agent: AgentDefinition, blackboard: string, config: SwarmConfig): string {
   const maxFindings = Math.max(3, config.policy.maxInlinePerAgent * 2);
 
-  return `${agent.persona}
-
----
-
-${HARNESS_RULES}
+  return `${HARNESS_RULES}
 
 ---
 
 ${blackboard}
+
+---
+
+## 너의 역할
+
+${agent.persona}
 
 ---
 

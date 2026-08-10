@@ -1,4 +1,5 @@
 import { matchesAnyGlob } from "../util/glob.js";
+import { normalizePath } from "../util/text.js";
 const CLASS_PRIORITY = {
     gate: 0,
     analyst: 1,
@@ -30,7 +31,7 @@ export function route(config, registry, changedFiles, diff) {
     for (const agentId of config.router.always)
         add(agentId, 'always');
     const paths = changedFiles.map((file) => file.path);
-    const touched = touchedText(diff).toLowerCase();
+    const touched = touchedText(diff, config.router.contentScanIgnore).toLowerCase();
     for (const rule of config.router.rules) {
         const pathHit = rule.paths.length > 0 && paths.some((path) => matchesAnyGlob(path, rule.paths));
         const contentHit = rule.content.length > 0 && rule.content.some((token) => touched.includes(token.toLowerCase()));
@@ -71,10 +72,24 @@ export function route(config, registry, changedFiles, diff) {
         reasons.delete(dropped);
     return { selected, reasons, fullSweep };
 }
-/** Only the added/removed lines — context lines would make every rule fire. */
-function touchedText(diff) {
+/**
+ * Only the added/removed lines, and only from files worth keyword-scanning.
+ *
+ * Context lines would make every rule fire; so would the swarm's own config,
+ * which lists the trigger keywords verbatim.
+ */
+export function touchedText(diff, contentScanIgnore = []) {
     const out = [];
+    let scanning = true;
     for (const line of diff.split('\n')) {
+        const header = /^diff --git (?:"?a\/(.*?)"?) (?:"?b\/(.*?)"?)$/.exec(line);
+        if (header) {
+            const path = normalizePath(header[2] ?? header[1] ?? '');
+            scanning = !matchesAnyGlob(path, contentScanIgnore);
+            continue;
+        }
+        if (!scanning)
+            continue;
         if (line.startsWith('+++') || line.startsWith('---'))
             continue;
         if (line.startsWith('+') || line.startsWith('-'))

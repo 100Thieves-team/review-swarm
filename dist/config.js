@@ -17,6 +17,7 @@ export const DEFAULT_CONFIG = {
         claude: {
             bin: 'claude',
             model: 'sonnet',
+            effort: '',
             tools: ['Read', 'Grep', 'Glob'],
             permissionMode: 'bypassPermissions',
             extraArgs: [],
@@ -25,6 +26,8 @@ export const DEFAULT_CONFIG = {
         codex: {
             bin: 'codex',
             model: '',
+            // Codex defaults to xhigh, which costs minutes per review turn.
+            effort: 'medium',
             sandbox: 'read-only',
             ephemeral: true,
             extraArgs: [],
@@ -140,16 +143,26 @@ export const DEFAULT_CONFIG = {
         ],
         maxAgents: 6,
         fullSweepChangedLines: 400,
+        contentScanIgnore: [
+            '**/.review-swarm.{yaml,yml,json}',
+            '**/review-swarm.{yaml,yml}',
+            '**/*.md',
+            '**/*.lock',
+        ],
     },
     verify: {
         enabled: true,
         minSeverity: 'medium',
         voters: 1,
         refuteThreshold: 0.5,
+        // Verification is a focused yes/no against code the finding already cites, but
+        // 'low' misses enough to be a false economy — 'medium' is the working default.
+        effort: 'medium',
     },
     debate: {
         enabled: true,
         maxPairs: 3,
+        effort: 'medium',
     },
     mediator: {
         enabled: true,

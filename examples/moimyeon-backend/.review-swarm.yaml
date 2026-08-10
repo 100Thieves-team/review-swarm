@@ -10,26 +10,36 @@ version: 1
 
 engine:
   default: claude
-  concurrency: 3 # 로컬 맥에서 도는 것을 감안한 값. 러너가 여유로우면 4~6
+  # router.maxAgents와 같게 둔다. 이보다 작으면 전문가들이 슬롯 대기로 직렬화된다.
+  concurrency: 5
   timeoutMs: 900000
   retries: 1
   claude:
     model: sonnet
     tools: [Read, Grep, Glob]
 
+# effort가 리뷰 속도를 가장 크게 좌우한다. low | medium | high | xhigh | max.
+# low는 놓치는 게 많고 xhigh는 한 턴에 수 분이 걸린다. medium이 실사용 균형점이다.
+# 특정 에이전트만 더 깊게 보고 싶으면 그 항목만 high로 올린다.
 agents:
   security:
     enabled: true
+    effort: medium
   consistency:
     enabled: true
+    effort: medium
   performance:
     enabled: true
+    effort: medium
   architect:
     enabled: true
+    effort: medium
   pragmatist:
     enabled: true
+    effort: medium
   collaborator:
     enabled: true
+    effort: medium
     extraInstructions: |
       이 저장소는 Kotlin + Spring Boot + Gradle 멀티모듈이다.
       모듈 경계(core / admin / clients / security / storage / support)를 넘는 의존이 새로 생기면 반드시 지적하라.
@@ -37,6 +47,7 @@ agents:
       마이그레이션 버전 번호는 CI가 중복을 검사한다는 사실을 전제로 판단하라.
   mediator:
     enabled: true
+    effort: medium
 
 router:
   always: [security, pragmatist]
@@ -133,13 +144,16 @@ verify:
   minSeverity: medium
   voters: 1 # 신뢰가 쌓이기 전까지는 1. 오탐이 거슬리면 3으로 올린다
   refuteThreshold: 0.5
+  effort: medium
 
 debate:
   enabled: true
   maxPairs: 2
+  effort: medium
 
 mediator:
   enabled: true
+  effort: medium
 
 policy:
   gateAgents: [security, consistency]
@@ -170,8 +184,16 @@ context:
   diffContextLines: 5
   maxDiffChars: 600000
   maxPromptDiffChars: 160000
-  teamRuleFiles: [CLAUDE.md, AGENTS.md, docs/review-rules.md]
-  maxTeamRuleChars: 12000
+  # 실제 컨벤션은 docs/conventions/ 아래 12개 문서에 있다. README.md가 허브라
+  # 여기에 요약과 링크가 모두 들어 있고, 에이전트는 Read/Glob으로 하위 문서를 직접
+  # 열어볼 수 있으므로 허브 + 모듈 경계 문서만 주입한다.
+  # (CLAUDE.md / AGENTS.md는 현재 제목 한 줄뿐이라 사실상 기여하지 않는다.)
+  teamRuleFiles:
+    - CLAUDE.md
+    - AGENTS.md
+    - docs/conventions/README.md
+    - docs/conventions/modules.md
+  maxTeamRuleChars: 20000
 
 # 비워 둔다. ci.yml이 이미 GitHub 호스티드 러너에서 ktlintCheck와 test를 돌린다.
 # 여기에 ./gradlew test를 넣으면 (1) 같은 일을 두 번 하고 (2) PR이 가져온 코드를

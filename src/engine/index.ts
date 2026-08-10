@@ -12,6 +12,8 @@ export interface EngineRequest {
   runDir: string;
   timeoutMs: number;
   model?: string;
+  /** Reasoning effort: low | medium | high | xhigh | max. The main latency knob. */
+  effort?: string;
 }
 
 export interface EngineResponse {
@@ -62,12 +64,18 @@ export class EnginePool {
     return engine;
   }
 
-  /** Engine + model + timeout for a stage, honouring per-stage overrides. */
-  resolve(override: EngineOverride | undefined): { engine: Engine; model: string | undefined; timeoutMs: number } {
+  /** Engine + model + effort + timeout for a stage, honouring per-stage overrides. */
+  resolve(override: EngineOverride | undefined): {
+    engine: Engine;
+    model: string | undefined;
+    effort: string | undefined;
+    timeoutMs: number;
+  } {
     const name = override?.engine ?? this.config.engine.default;
     return {
       engine: this.get(name),
       model: override?.model,
+      effort: override?.effort,
       timeoutMs: override?.timeoutMs ?? this.config.engine.timeoutMs,
     };
   }

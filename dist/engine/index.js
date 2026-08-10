@@ -30,12 +30,13 @@ export class EnginePool {
         this.engines.set(name, engine);
         return engine;
     }
-    /** Engine + model + timeout for a stage, honouring per-stage overrides. */
+    /** Engine + model + effort + timeout for a stage, honouring per-stage overrides. */
     resolve(override) {
         const name = override?.engine ?? this.config.engine.default;
         return {
             engine: this.get(name),
             model: override?.model,
+            effort: override?.effort,
             timeoutMs: override?.timeoutMs ?? this.config.engine.timeoutMs,
         };
     }

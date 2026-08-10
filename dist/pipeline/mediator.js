@@ -21,7 +21,12 @@ export async function mediate(options) {
     const mediator = registry.get('mediator');
     const prompt = buildMediatorPrompt(mediator?.persona ?? '', findings, registry, context);
     persist(context.runDir, 'prompts/mediator.md', prompt);
-    const { engine, model, timeoutMs } = pool.resolve(config.mediator);
+    // Engine settings for this stage may be written under either `mediator:` or
+    // `agents.mediator:`. Honour both so neither is a silent no-op; `mediator:` wins.
+    const { engine, model, effort, timeoutMs } = pool.resolve({
+        ...config.agents['mediator'],
+        ...stripUndefined(config.mediator),
+    });
     const response = await engine.invoke({
         label: 'mediator',
         prompt,
@@ -30,6 +35,7 @@ export async function mediate(options) {
         runDir: context.runDir,
         timeoutMs,
         ...(model ? { model } : {}),
+        ...(effort ? { effort } : {}),
     });
     if (!response.ok) {
         logger.warn(`mediator failed: ${response.error}; falling back to severity-based verdicts`);
@@ -61,7 +67,21 @@ export async function mediate(options) {
     }
     logger.info(`mediator: ${decided}/${findings.length} findings judged`);
     persist(context.runDir, 'mediation.json', findings.map((f) => ({ id: f.id, verdict: f.verdict, reason: f.verdictReason })));
-    return { summary: asString(record['summary']).trim() || '조정자 요약 없음.', ok: true, error: null };
+    return { summary: sanitizeSummary(asString(record['summary'])) || '조정자 요약 없음.', ok: true, error: null };
+}
+/**
+ * The summary is pasted straight into a review body, so a stray `</summary>` or
+ * `<details>` the model echoed from its input would unbalance the surrounding
+ * markdown and swallow the rest of the comment. It is meant to be plain prose.
+ */
+export function sanitizeSummary(summary) {
+    return summary
+        .replace(/<\/?(?:details|summary)(?:\s[^>]*)?>/gi, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+function stripUndefined(value) {
+    return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined));
 }
 function buildMediatorPrompt(persona, findings, registry, context) {
     const rendered = findings

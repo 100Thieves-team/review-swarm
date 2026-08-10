@@ -21,7 +21,7 @@ export async function verifyFindings(options) {
     if (targets.length === 0)
         return findings;
     logger.info(`verify: ${targets.length} findings × ${config.verify.voters} voter(s)`);
-    const { engine, model, timeoutMs } = pool.resolve(config.verify);
+    const { engine, model, effort, timeoutMs } = pool.resolve(config.verify);
     await mapLimit(targets, config.engine.concurrency, async (finding) => {
         const prompt = buildVerifyPrompt(finding, fileDiff(parsed, finding.file), context);
         persist(context.runDir, `prompts/verify-${finding.id}.md`, prompt);
@@ -35,6 +35,7 @@ export async function verifyFindings(options) {
                 runDir: context.runDir,
                 timeoutMs,
                 ...(model ? { model } : {}),
+                ...(effort ? { effort } : {}),
             });
             if (!response.ok) {
                 logger.warn(`verify ${finding.id} vote ${index} failed: ${response.error}`);

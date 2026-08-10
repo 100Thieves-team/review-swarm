@@ -39,6 +39,39 @@ describe('route', () => {
     assert.ok(added.selected.includes('consistency'));
   });
 
+  it('does not keyword-scan the swarm config, which lists the triggers verbatim', () => {
+    const configDiff = `diff --git a/.review-swarm.yaml b/.review-swarm.yaml
+--- a/.review-swarm.yaml
++++ b/.review-swarm.yaml
+@@ -1,1 +1,2 @@
+ version: 1
++      content: ['@Transactional', jwt, token, secret, '@Query']
+`;
+    const decision = route(config, registry, [file('.review-swarm.yaml')], configDiff);
+    assert.equal(decision.selected.includes('consistency'), false, 'transaction rule must not fire on its own config');
+    assert.equal(decision.selected.includes('performance'), false);
+    // The baseline personas still run; only the keyword fan-out is suppressed.
+    assert.deepEqual(decision.selected.sort(), ['pragmatist', 'security']);
+  });
+
+  it('still keyword-scans real source files in the same diff', () => {
+    const mixed = `diff --git a/.review-swarm.yaml b/.review-swarm.yaml
+--- a/.review-swarm.yaml
++++ b/.review-swarm.yaml
+@@ -1,1 +1,2 @@
+ version: 1
++      content: ['@Transactional']
+diff --git a/src/OrderService.kt b/src/OrderService.kt
+--- a/src/OrderService.kt
++++ b/src/OrderService.kt
+@@ -1,1 +1,2 @@
+ class OrderService {
++  @Transactional fun save() {}
+`;
+    const decision = route(config, registry, [file('.review-swarm.yaml'), file('src/OrderService.kt')], mixed);
+    assert.ok(decision.selected.includes('consistency'));
+  });
+
   it('runs every persona on a large change', () => {
     const decision = route(config, registry, [file('src/app.ts', 500, 100)], '');
     assert.equal(decision.fullSweep, true);
@@ -60,7 +93,7 @@ describe('route', () => {
 
   it('falls back to the safety gates when nothing matches', () => {
     const bare = testConfig({
-      router: { always: [], rules: [], maxAgents: 6, fullSweepChangedLines: 10_000 },
+      router: { always: [], rules: [], maxAgents: 6, fullSweepChangedLines: 10_000, contentScanIgnore: [] },
     });
     const decision = route(bare, testRegistry(bare), [file('notes.txt', 1, 0)], '');
     assert.deepEqual(decision.selected.sort(), ['consistency', 'security']);

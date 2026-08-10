@@ -43,3 +43,25 @@ export function group<T>(title: string, fn: () => Promise<T>): Promise<T> {
     if (inActions) process.stdout.write('::endgroup::\n');
   });
 }
+
+/**
+ * Time a stage, log its duration and record it.
+ *
+ * Wall-clock per stage is the only way to tell whether a slow run was the expert
+ * fan-out, the verifier or the mediator — without it, tuning is guesswork.
+ */
+export async function timedStage<T>(
+  title: string,
+  timings: Record<string, number>,
+  logger: Logger,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const startedAt = Date.now();
+  try {
+    return await group(title, fn);
+  } finally {
+    const elapsed = Date.now() - startedAt;
+    timings[title] = elapsed;
+    logger.info(`stage "${title}" ${(elapsed / 1000).toFixed(1)}s`);
+  }
+}

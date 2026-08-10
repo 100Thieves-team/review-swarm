@@ -15,6 +15,8 @@ export interface EngineOverride {
 export interface ClaudeEngineConfig {
   bin: string;
   model: string;
+  /** low | medium | high | xhigh | max. Empty string inherits the CLI default. */
+  effort: string;
   tools: string[];
   permissionMode: string;
   extraArgs: string[];
@@ -24,6 +26,8 @@ export interface ClaudeEngineConfig {
 export interface CodexEngineConfig {
   bin: string;
   model: string;
+  /** low | medium | high | xhigh. Empty string inherits the CLI default (xhigh). */
+  effort: string;
   sandbox: 'read-only' | 'workspace-write' | 'danger-full-access';
   /** Do not persist session files — CI runs should not accumulate transcripts. */
   ephemeral: boolean;
@@ -53,6 +57,14 @@ export interface RouterConfig {
   maxAgents: number;
   /** Run everyone when the diff is at least this many changed lines. */
   fullSweepChangedLines: number;
+  /**
+   * Files whose contents are excluded from `rules[].content` matching.
+   *
+   * The swarm's own config lists the trigger keywords verbatim, so editing it
+   * would otherwise fire every content rule and fan out to every expert.
+   * Path rules still apply to these files — they are reviewed as normal.
+   */
+  contentScanIgnore: string[];
 }
 
 export interface AgentConfig extends EngineOverride {
@@ -156,6 +168,7 @@ export const DEFAULT_CONFIG: SwarmConfig = {
     claude: {
       bin: 'claude',
       model: 'sonnet',
+      effort: '',
       tools: ['Read', 'Grep', 'Glob'],
       permissionMode: 'bypassPermissions',
       extraArgs: [],
@@ -164,6 +177,8 @@ export const DEFAULT_CONFIG: SwarmConfig = {
     codex: {
       bin: 'codex',
       model: '',
+      // Codex defaults to xhigh, which costs minutes per review turn.
+      effort: 'medium',
       sandbox: 'read-only',
       ephemeral: true,
       extraArgs: [],
@@ -279,16 +294,26 @@ export const DEFAULT_CONFIG: SwarmConfig = {
     ],
     maxAgents: 6,
     fullSweepChangedLines: 400,
+    contentScanIgnore: [
+      '**/.review-swarm.{yaml,yml,json}',
+      '**/review-swarm.{yaml,yml}',
+      '**/*.md',
+      '**/*.lock',
+    ],
   },
   verify: {
     enabled: true,
     minSeverity: 'medium',
     voters: 1,
     refuteThreshold: 0.5,
+    // Verification is a focused yes/no against code the finding already cites, but
+    // 'low' misses enough to be a false economy — 'medium' is the working default.
+    effort: 'medium',
   },
   debate: {
     enabled: true,
     maxPairs: 3,
+    effort: 'medium',
   },
   mediator: {
     enabled: true,

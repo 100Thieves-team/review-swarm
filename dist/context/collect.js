@@ -35,7 +35,7 @@ export async function collectContext(options) {
     const diffPath = join(runDir, 'diff.patch');
     writeFileSync(diffPath, filteredDiff, 'utf8');
     const checks = await runChecks(config, workdir, logger);
-    const teamRules = readTeamRules(config, workdir);
+    const teamRules = readTeamRules(config, workdir, logger);
     const context = {
         runId,
         workdir,
@@ -106,25 +106,50 @@ async function runChecks(config, workdir, logger) {
     }
     return results;
 }
-function readTeamRules(config, workdir) {
+/**
+ * Collect the team's written conventions for the blackboard.
+ *
+ * Missing and empty entries are reported: a rules file that silently does not
+ * exist makes every persona review without the conventions it was configured to
+ * enforce, and nothing else in the run would reveal that.
+ */
+function readTeamRules(config, workdir, logger) {
     const sections = [];
+    const missing = [];
+    const empty = [];
     let budget = config.context.maxTeamRuleChars;
     for (const relative of config.context.teamRuleFiles) {
-        if (budget <= 0)
+        if (budget <= 0) {
+            logger.warn(`team rules budget exhausted; "${relative}" and later entries were not loaded`);
             break;
+        }
         const path = resolve(workdir, relative);
-        if (!existsSync(path))
+        if (!existsSync(path)) {
+            missing.push(relative);
             continue;
+        }
         try {
             const body = truncate(readFileSync(path, 'utf8').trim(), budget);
-            if (!body)
+            // A heading-only file contributes nothing but looks configured.
+            if (body.replace(/^#+\s.*$/gm, '').trim().length === 0) {
+                empty.push(relative);
                 continue;
+            }
             sections.push(`### ${relative}\n${body}`);
             budget -= body.length;
         }
-        catch {
-            // An unreadable rules file must not abort the review.
+        catch (error) {
+            logger.warn(`could not read team rules file "${relative}": ${String(error)}`);
         }
+    }
+    if (missing.length > 0) {
+        logger.warn(`context.teamRuleFiles not found: ${missing.join(', ')} — 오타이거나 파일이 삭제되었는지 확인하세요`);
+    }
+    if (empty.length > 0) {
+        logger.warn(`context.teamRuleFiles have no content beyond headings: ${empty.join(', ')}`);
+    }
+    if (sections.length === 0 && config.context.teamRuleFiles.length > 0) {
+        logger.warn('팀 규칙이 하나도 수집되지 않았습니다 — 에이전트가 컨벤션을 모른 채 리뷰합니다');
     }
     return sections.join('\n\n');
 }
