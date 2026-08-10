@@ -1,0 +1,7 @@
+node_modules/
+.review-swarm/
+*.tsbuildinfo
+
+# dist/ is intentionally NOT ignored.
+# GitHub re-downloads a composite action on every job, so a missing dist/ would
+# mean an npm install + tsc build on every single PR. Commit the build output.

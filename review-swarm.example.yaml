@@ -1,0 +1,164 @@
+# review-swarm 설정. 저장소 루트에 `.review-swarm.yaml`로 두면 자동으로 읽힌다.
+# 모든 항목은 선택 사항이며, 적으면 내장 기본값을 덮어쓴다.
+# 배열은 병합이 아니라 "통째로 교체"된다.
+
+version: 1
+
+engine:
+  # 기본 실행 엔진. 이미 결제한 구독을 그대로 쓴다.
+  default: claude # claude | codex | mock
+  concurrency: 4
+  timeoutMs: 900000
+  retries: 1
+
+  claude:
+    bin: claude
+    model: sonnet
+    # 읽기 전용 도구만 허용한다. 여기에 Bash/Edit를 넣지 마라.
+    tools: [Read, Grep, Glob]
+    permissionMode: bypassPermissions
+    settingSources: project
+    extraArgs: []
+
+  codex:
+    bin: codex
+    model: '' # 비우면 codex의 기본 모델을 쓴다
+    sandbox: read-only
+    ephemeral: true
+    extraArgs: []
+    configOverrides: []
+
+# 에이전트별 엔진/모델을 따로 줄 수 있다.
+# 안전 게이트는 강한 모델, 가치 에이전트는 저렴한 모델처럼 섞어 쓰면 비용이 내려간다.
+agents:
+  security:
+    enabled: true
+    # engine: codex   # 예: 보안만 codex로 돌리고 싶을 때
+  consistency:
+    enabled: true
+  performance:
+    enabled: true
+  architect:
+    enabled: true
+  pragmatist:
+    enabled: true
+  collaborator:
+    enabled: true
+    # extraInstructions: |
+    #   이 저장소는 Spring Boot 3 + JPA를 쓴다. 컨벤션은 docs/conventions.md를 따른다.
+  mediator:
+    enabled: true
+    # personaFile: .github/personas/mediator.md
+
+# 어떤 변경에 어떤 전문가를 부를지 결정한다. 결정론적이며 모델을 쓰지 않는다.
+router:
+  always: [security, pragmatist]
+  maxAgents: 6
+  fullSweepChangedLines: 400
+  rules:
+    - name: persistence
+      paths: ['**/repository/**', '**/*Repository.*', '**/entity/**', '**/migrations/**', '**/*.sql']
+      content: ['SELECT ', 'INSERT INTO', 'UPDATE ', 'DELETE FROM', '@Query', 'findAll']
+      add: [performance, consistency]
+    - name: auth
+      paths: ['**/auth/**', '**/security/**', '**/middleware/**', '**/*Guard.*']
+      content: [jwt, token, password, secret, authorize, tenant]
+      add: [security, collaborator]
+    - name: domain
+      paths: ['**/domain/**', '**/service/**', '**/*Service.*', '**/usecase/**']
+      content: []
+      add: [consistency, architect]
+    - name: external-io
+      paths: ['**/client/**', '**/*Client.*', '**/gateway/**']
+      content: ['fetch(', axios, RestTemplate, WebClient, 'requests.']
+      add: [consistency, performance]
+    - name: api-contract
+      paths: ['**/controller/**', '**/*Controller.*', '**/routes/**', '**/api/**', '**/openapi*.{yaml,yml,json}']
+      content: []
+      add: [collaborator, security]
+    - name: concurrency
+      paths: []
+      content: ['@Transactional', lock, synchronized, kafka, sqs, retry]
+      add: [consistency]
+    - name: ops-surface
+      paths: ['**/.github/workflows/**', '**/Dockerfile*', '**/*.tf', '**/helm/**', '**/k8s/**']
+      content: []
+      add: [collaborator, security]
+    - name: structure
+      paths: ['**/*.{ts,tsx,js,java,kt,go,rs,py,rb,cs}']
+      content: []
+      add: [architect]
+
+# 적대적 검증. 각 finding을 "반박하라"는 지시로 다시 검토한다.
+verify:
+  enabled: true
+  minSeverity: medium # 이 심각도 이상만 검증한다
+  voters: 1 # 중요한 저장소라면 3으로 올린다
+  refuteThreshold: 0.5
+  # engine: claude
+  # model: sonnet
+
+# 의견이 충돌한 쌍만 한 라운드 토론시킨다.
+debate:
+  enabled: true
+  maxPairs: 3
+
+mediator:
+  enabled: true
+  # model: opus
+
+# 결정론적 정책 게이트. 여기가 실제로 머지를 막는 유일한 지점이다.
+policy:
+  gateAgents: [security, consistency] # 입증되면 차단할 수 있다
+  analystAgents: [performance] # 규모 근거가 있을 때만 차단
+  valueAgents: [architect, pragmatist, collaborator] # 절대 차단하지 않는다
+  blockMinSeverity: high
+  blockMinConfidence: 0.7
+  requireAnalystEvidence: true
+  maxInlinePerAgent: 6
+  maxInlineTotal: 25
+  maxSnapDistance: 20
+  dropBelowSeverity: info
+  dropBelowConfidence: 0.45
+
+publish:
+  mode: apps # apps | single | none
+  event: auto # auto | comment | request_changes
+  approveWhenClean: false
+  minimizeStale: false
+  language: ko
+  summaryAgent: mediator
+  skipDuplicates: true
+
+context:
+  diffContextLines: 5
+  maxDiffChars: 600000
+  maxPromptDiffChars: 160000
+  teamRuleFiles: [CLAUDE.md, AGENTS.md, CONTRIBUTING.md, docs/review-rules.md]
+  maxTeamRuleChars: 12000
+
+# 테스트/정적 분석 결과를 blackboard에 넣는다.
+# 주의: 여기 적은 명령은 PR이 가져온 코드를 실행한다. fork PR을 리뷰한다면 비워 둬라.
+checks: []
+# checks:
+#   - name: lint
+#     run: npm run lint
+#     timeoutMs: 300000
+#     maxOutputChars: 8000
+#   - name: test
+#     run: npm test
+#     timeoutMs: 900000
+#     maxOutputChars: 12000
+
+ignore:
+  - '**/*.lock'
+  - '**/package-lock.json'
+  - '**/pnpm-lock.yaml'
+  - '**/*.min.js'
+  - '**/dist/**'
+  - '**/build/**'
+  - '**/vendor/**'
+  - '**/node_modules/**'
+  - '**/__snapshots__/**'
+  - '**/*.svg'
+  - '**/*.png'

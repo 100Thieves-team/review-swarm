@@ -1,0 +1,70 @@
+# 100Thieves-team/moimyeon-backend 전용 워크플로
+# 대상 저장소의 .github/workflows/review-swarm.yml 로 둔다.
+#
+# 보안 (public 저장소 + self-hosted 러너 조합이라 특히 중요):
+#   - 트리거는 `pull_request`다. 절대 `pull_request_target`으로 바꾸지 마라.
+#   - 아래 `if` 가드가 fork PR을 제외한다. public 저장소는 누구나 fork 후 PR을 열 수 있고,
+#     self-hosted 러너에서 fork PR을 돌리면 남의 코드를 우리 맥에서 실행하는 것이 된다.
+#     이 가드를 지우지 마라.
+#   - 추가로 저장소 Settings → Actions → General → Fork pull request workflows 에서
+#     "Require approval for all external contributors"를 켜 둘 것.
+
+name: review-swarm
+
+on:
+  pull_request:
+    branches: [dev, main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: review-swarm-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.draft == false
+    runs-on: [self-hosted, review-swarm]
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          # 에이전트가 호출부·구현체·테스트를 직접 열어봐야 하므로 전체 히스토리가 필요하다.
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      # 러너 서비스의 PATH에 node가 없을 수 있어 명시적으로 깐다.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Review
+        uses: 100Thieves-team/review-swarm@main
+        with:
+          fail-on: never
+          upload-artifacts: 'true'
+        env:
+          # publish.mode를 apps로 바꾸기 전까지는 아래 시크릿이 없어도 동작한다.
+          # (없는 에이전트는 GITHUB_TOKEN으로 게시되고 코멘트 머리에 페르소나 이름이 붙는다)
+          SWARM_SECURITY_APP_ID: ${{ secrets.SWARM_SECURITY_APP_ID }}
+          SWARM_SECURITY_PRIVATE_KEY: ${{ secrets.SWARM_SECURITY_PRIVATE_KEY }}
+          SWARM_CONSISTENCY_APP_ID: ${{ secrets.SWARM_CONSISTENCY_APP_ID }}
+          SWARM_CONSISTENCY_PRIVATE_KEY: ${{ secrets.SWARM_CONSISTENCY_PRIVATE_KEY }}
+          SWARM_PERFORMANCE_APP_ID: ${{ secrets.SWARM_PERFORMANCE_APP_ID }}
+          SWARM_PERFORMANCE_PRIVATE_KEY: ${{ secrets.SWARM_PERFORMANCE_PRIVATE_KEY }}
+          SWARM_ARCHITECT_APP_ID: ${{ secrets.SWARM_ARCHITECT_APP_ID }}
+          SWARM_ARCHITECT_PRIVATE_KEY: ${{ secrets.SWARM_ARCHITECT_PRIVATE_KEY }}
+          SWARM_PRAGMATIST_APP_ID: ${{ secrets.SWARM_PRAGMATIST_APP_ID }}
+          SWARM_PRAGMATIST_PRIVATE_KEY: ${{ secrets.SWARM_PRAGMATIST_PRIVATE_KEY }}
+          SWARM_COLLABORATOR_APP_ID: ${{ secrets.SWARM_COLLABORATOR_APP_ID }}
+          SWARM_COLLABORATOR_PRIVATE_KEY: ${{ secrets.SWARM_COLLABORATOR_PRIVATE_KEY }}
+          SWARM_MEDIATOR_APP_ID: ${{ secrets.SWARM_MEDIATOR_APP_ID }}
+          SWARM_MEDIATOR_PRIVATE_KEY: ${{ secrets.SWARM_MEDIATOR_PRIVATE_KEY }}

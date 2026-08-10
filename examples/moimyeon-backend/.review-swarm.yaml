@@ -1,0 +1,193 @@
+# 100Thieves-team/moimyeon-backend 전용 설정
+# 대상 저장소 루트에 `.review-swarm.yaml`로 둔다.
+#
+# 저장소 특성에 맞춘 부분:
+#   - Kotlin + Gradle 멀티모듈 (core/, admin/, clients/, security/, storage/, support/, tests/, infra/)
+#   - Spring Boot + JPA + Flyway (storage/db-core/src/main/resources/db/migration)
+#   - CLAUDE.md / AGENTS.md는 teamRuleFiles 기본값에 이미 포함되어 자동 수집된다
+
+version: 1
+
+engine:
+  default: claude
+  concurrency: 3 # 로컬 맥에서 도는 것을 감안한 값. 러너가 여유로우면 4~6
+  timeoutMs: 900000
+  retries: 1
+  claude:
+    model: sonnet
+    tools: [Read, Grep, Glob]
+
+agents:
+  security:
+    enabled: true
+  consistency:
+    enabled: true
+  performance:
+    enabled: true
+  architect:
+    enabled: true
+  pragmatist:
+    enabled: true
+  collaborator:
+    enabled: true
+    extraInstructions: |
+      이 저장소는 Kotlin + Spring Boot + Gradle 멀티모듈이다.
+      모듈 경계(core / admin / clients / security / storage / support)를 넘는 의존이 새로 생기면 반드시 지적하라.
+      DB 스키마 변경은 Flyway 마이그레이션(storage/db-core/src/main/resources/db/migration)으로만 이루어져야 하며,
+      마이그레이션 버전 번호는 CI가 중복을 검사한다는 사실을 전제로 판단하라.
+  mediator:
+    enabled: true
+
+router:
+  always: [security, pragmatist]
+  maxAgents: 5 # PR당 비용 상한. 늘리면 리뷰는 촘촘해지고 시간·토큰이 는다
+  fullSweepChangedLines: 400
+  rules:
+    - name: persistence
+      paths:
+        - 'storage/**'
+        - '**/db/migration/**'
+        - '**/*.sql'
+        - '**/*Repository.kt'
+        - '**/*RepositoryImpl.kt'
+        - '**/entity/**'
+        - '**/*Entity.kt'
+      content: ['@Query', '@Modifying', 'createQuery', 'findAll', 'JPAQuery', 'querydsl', 'fetchJoin']
+      add: [performance, consistency]
+
+    - name: auth
+      paths:
+        - 'security/**'
+        - '**/*Filter.kt'
+        - '**/*Authentication*.kt'
+        - '**/*Authorization*.kt'
+        - '**/*Jwt*.kt'
+        - '**/*Oauth*.kt'
+        - '**/*OAuth*.kt'
+        - '**/config/Security*.kt'
+      content: [jwt, oauth, password, secret, token, authorize, hasRole, principal, '@PreAuthorize']
+      add: [security, collaborator]
+
+    - name: domain
+      paths:
+        - 'core/core-api/**'
+        - 'core/core-batch/**'
+        - '**/*Service.kt'
+        - '**/*UseCase.kt'
+        - '**/domain/**'
+      content: []
+      add: [consistency, architect]
+
+    - name: transaction-and-concurrency
+      paths: []
+      content:
+        - '@Transactional'
+        - '@Async'
+        - '@Scheduled'
+        - '@Retryable'
+        - 'runBlocking'
+        - 'CompletableFuture'
+        - 'redisTemplate'
+        - 'RedissonClient'
+        - 'lockAtLeastFor'
+      add: [consistency]
+
+    - name: external-io
+      paths:
+        - 'clients/**'
+        - '**/*Client.kt'
+        - '**/*Adapter.kt'
+      content: [RestTemplate, WebClient, RestClient, FeignClient, HttpClient, 'okhttp']
+      add: [consistency, performance]
+
+    - name: api-contract
+      paths:
+        - '**/*Controller.kt'
+        - '**/dto/**'
+        - '**/*Request.kt'
+        - '**/*Response.kt'
+        - 'docs/**'
+      content: []
+      add: [collaborator, security]
+
+    - name: ops-surface
+      paths:
+        - 'infra/**'
+        - '**/*.tf'
+        - 'Dockerfile'
+        - 'docker-compose.yml'
+        - '.github/workflows/**'
+        - '**/application*.yml'
+        - '**/application*.yaml'
+        - '.env.example'
+      content: []
+      add: [collaborator, security]
+
+    - name: structure
+      paths: ['**/*.kt', '**/*.kts']
+      content: []
+      add: [architect]
+
+verify:
+  enabled: true
+  minSeverity: medium
+  voters: 1 # 신뢰가 쌓이기 전까지는 1. 오탐이 거슬리면 3으로 올린다
+  refuteThreshold: 0.5
+
+debate:
+  enabled: true
+  maxPairs: 2
+
+mediator:
+  enabled: true
+
+policy:
+  gateAgents: [security, consistency]
+  analystAgents: [performance]
+  valueAgents: [architect, pragmatist, collaborator]
+  blockMinSeverity: high
+  blockMinConfidence: 0.7
+  requireAnalystEvidence: true
+  maxInlinePerAgent: 5
+  maxInlineTotal: 20
+  maxSnapDistance: 20
+  dropBelowSeverity: info
+  dropBelowConfidence: 0.45
+
+publish:
+  # 처음에는 single로 시작해서 리뷰 품질을 확인하고,
+  # GitHub App 7개를 다 만든 뒤 apps로 바꾼다.
+  mode: single
+  # 처음에는 comment로 두고 머지를 막지 않는다. 신뢰가 쌓이면 auto로 바꾼다.
+  event: comment
+  approveWhenClean: false
+  minimizeStale: false
+  language: ko
+  summaryAgent: mediator
+  skipDuplicates: true
+
+context:
+  diffContextLines: 5
+  maxDiffChars: 600000
+  maxPromptDiffChars: 160000
+  teamRuleFiles: [CLAUDE.md, AGENTS.md, docs/review-rules.md]
+  maxTeamRuleChars: 12000
+
+# 비워 둔다. ci.yml이 이미 GitHub 호스티드 러너에서 ktlintCheck와 test를 돌린다.
+# 여기에 ./gradlew test를 넣으면 (1) 같은 일을 두 번 하고 (2) PR이 가져온 코드를
+# 로컬 러너에서 실행하게 된다.
+checks: []
+
+ignore:
+  - '**/*.lock'
+  - '**/build/**'
+  - '**/.gradle/**'
+  - 'gradle/**'
+  - 'gradlew'
+  - 'gradlew.bat'
+  - '**/generated/**'
+  - '**/*.min.js'
+  - '**/*.svg'
+  - '**/*.png'
+  - '**/*.jpg'
+  - '**/*.pdf'

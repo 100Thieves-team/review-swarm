@@ -1,0 +1,35 @@
+{
+  "name": "review-swarm",
+  "version": "0.1.0",
+  "description": "Multi-agent PR review swarm. Runs Claude Code / Codex CLIs locally on a self-hosted runner and posts inline GitHub reviews as per-persona GitHub Apps.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "review-swarm": "dist/cli.js"
+  },
+  "main": "dist/cli.js",
+  "files": [
+    "dist",
+    "templates",
+    "action.yml",
+    "review-swarm.example.yaml",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "node --test --experimental-strip-types \"test/**/*.test.ts\"",
+    "check": "npm run typecheck && npm run test",
+    "swarm": "node --experimental-strip-types src/cli.ts"
+  },
+  "dependencies": {
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

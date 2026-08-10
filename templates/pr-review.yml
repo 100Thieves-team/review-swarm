@@ -1,0 +1,63 @@
+# 로컬 멀티에이전트 PR 리뷰
+#
+# 보안 주의 (반드시 읽을 것):
+#   - 트리거는 `pull_request`다. `pull_request_target`으로 바꾸지 마라.
+#     `pull_request_target`은 PR의 코드를 base 저장소의 시크릿과 함께 실행하므로,
+#     self-hosted 러너에서는 임의 코드 실행으로 이어진다.
+#   - 아래 `if` 가드는 fork PR을 제외한다. fork PR도 리뷰하려면 별도의 격리된
+#     러너를 쓰고, `.review-swarm.yaml`의 `checks:`를 반드시 비워라
+#     (checks는 PR이 가져온 코드를 실행한다).
+#   - 리뷰 에이전트 자체는 읽기 전용 샌드박스에서 동작한다.
+
+name: review-swarm
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: review-swarm-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # 같은 저장소에서 올라온 PR만 리뷰한다. draft는 건너뛴다.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.draft == false
+    runs-on: [self-hosted, review-swarm]
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          # 에이전트가 관련 코드를 직접 읽어야 하므로 전체 히스토리를 받는다.
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Review
+        uses: ORG/REPO/review-swarm@main # ← 이 도구를 담은 저장소로 바꿔라
+        with:
+          fail-on: never
+          upload-artifacts: 'true'
+        env:
+          # --- 에이전트별 GitHub App 자격 (없으면 공용 토큰으로 게시된다) ---
+          SWARM_SECURITY_APP_ID: ${{ secrets.SWARM_SECURITY_APP_ID }}
+          SWARM_SECURITY_PRIVATE_KEY: ${{ secrets.SWARM_SECURITY_PRIVATE_KEY }}
+          SWARM_CONSISTENCY_APP_ID: ${{ secrets.SWARM_CONSISTENCY_APP_ID }}
+          SWARM_CONSISTENCY_PRIVATE_KEY: ${{ secrets.SWARM_CONSISTENCY_PRIVATE_KEY }}
+          SWARM_PERFORMANCE_APP_ID: ${{ secrets.SWARM_PERFORMANCE_APP_ID }}
+          SWARM_PERFORMANCE_PRIVATE_KEY: ${{ secrets.SWARM_PERFORMANCE_PRIVATE_KEY }}
+          SWARM_ARCHITECT_APP_ID: ${{ secrets.SWARM_ARCHITECT_APP_ID }}
+          SWARM_ARCHITECT_PRIVATE_KEY: ${{ secrets.SWARM_ARCHITECT_PRIVATE_KEY }}
+          SWARM_PRAGMATIST_APP_ID: ${{ secrets.SWARM_PRAGMATIST_APP_ID }}
+          SWARM_PRAGMATIST_PRIVATE_KEY: ${{ secrets.SWARM_PRAGMATIST_PRIVATE_KEY }}
+          SWARM_COLLABORATOR_APP_ID: ${{ secrets.SWARM_COLLABORATOR_APP_ID }}
+          SWARM_COLLABORATOR_PRIVATE_KEY: ${{ secrets.SWARM_COLLABORATOR_PRIVATE_KEY }}
+          SWARM_MEDIATOR_APP_ID: ${{ secrets.SWARM_MEDIATOR_APP_ID }}
+          SWARM_MEDIATOR_PRIVATE_KEY: ${{ secrets.SWARM_MEDIATOR_PRIVATE_KEY }}

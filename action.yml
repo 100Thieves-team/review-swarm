@@ -1,0 +1,106 @@
+name: Review Swarm
+description: 로컬 Claude Code / Codex CLI로 멀티에이전트 PR 리뷰를 실행하고 GitHub App 봇으로 인라인 리뷰를 남깁니다.
+author: review-swarm
+
+inputs:
+  pr:
+    description: PR 번호. 비우면 pull_request 이벤트 payload에서 가져옵니다.
+    required: false
+    default: ''
+  repo:
+    description: owner/name. 비우면 GITHUB_REPOSITORY를 사용합니다.
+    required: false
+    default: ''
+  workdir:
+    description: 리뷰 대상 저장소 체크아웃 경로.
+    required: false
+    default: ${{ github.workspace }}
+  config:
+    description: 설정 파일 경로. 비우면 저장소의 .review-swarm.yaml을 찾습니다.
+    required: false
+    default: ''
+  engine:
+    description: 'claude | codex | mock — 모든 단계의 엔진을 강제로 지정합니다.'
+    required: false
+    default: ''
+  base:
+    description: diff 기준 커밋 재정의 (증분 리뷰용).
+    required: false
+    default: ''
+  token:
+    description: 게시에 사용할 GitHub 토큰. 에이전트별 App이 없을 때 폴백으로 쓰입니다.
+    required: false
+    default: ${{ github.token }}
+  dry-run:
+    description: 'true면 게시하지 않고 산출물만 남깁니다.'
+    required: false
+    default: 'false'
+  fail-on:
+    description: 'never | request_changes — 스텝 종료 코드 정책.'
+    required: false
+    default: 'never'
+  log-level:
+    description: 'debug | info | warn | error'
+    required: false
+    default: 'info'
+  upload-artifacts:
+    description: 'true면 실행 산출물을 워크플로 아티팩트로 업로드합니다.'
+    required: false
+    default: 'false'
+
+outputs:
+  event:
+    description: 게시된 리뷰 이벤트 (REQUEST_CHANGES / COMMENT / APPROVE)
+    value: ${{ steps.review.outputs.event }}
+  run-dir:
+    description: 실행 산출물 디렉터리
+    value: ${{ steps.review.outputs.run-dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Build review-swarm (필요한 경우)
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        if [ ! -f dist/cli.js ]; then
+          echo "dist가 없어 빌드합니다."
+          npm ci --no-audit --no-fund
+          npm run build
+        fi
+
+    - name: Run review swarm
+      id: review
+      shell: bash
+      env:
+        SWARM_GITHUB_TOKEN: ${{ inputs.token }}
+        SWARM_LOG_LEVEL: ${{ inputs.log-level }}
+      run: |
+        set -euo pipefail
+        args=(review --workdir "${{ inputs.workdir }}" --fail-on "${{ inputs.fail-on }}")
+        [ -n "${{ inputs.pr }}" ] && args+=(--pr "${{ inputs.pr }}")
+        [ -n "${{ inputs.repo }}" ] && args+=(--repo "${{ inputs.repo }}")
+        [ -n "${{ inputs.config }}" ] && args+=(--config "${{ inputs.config }}")
+        [ -n "${{ inputs.engine }}" ] && args+=(--engine "${{ inputs.engine }}")
+        [ -n "${{ inputs.base }}" ] && args+=(--base "${{ inputs.base }}")
+        [ "${{ inputs.dry-run }}" = "true" ] && args+=(--dry-run)
+
+        run_dir="${RUNNER_TEMP:-/tmp}/review-swarm-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+        args+=(--out "$run_dir")
+        echo "run-dir=$run_dir" >> "$GITHUB_OUTPUT"
+
+        node "${{ github.action_path }}/dist/cli.js" "${args[@]}"
+
+        if [ -f "$run_dir/run.json" ]; then
+          echo "event=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).event)' "$run_dir/run.json")" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Upload run artefacts
+      if: ${{ inputs.upload-artifacts == 'true' && always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: review-swarm-${{ github.run_id }}
+        path: ${{ steps.review.outputs.run-dir }}
+        if-no-files-found: ignore
+        retention-days: 7
