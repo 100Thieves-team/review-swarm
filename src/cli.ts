@@ -108,12 +108,14 @@ async function reviewCommand(args: {
     return 2;
   }
 
-  const token =
-    (values.token as string | undefined) ??
-    process.env.SWARM_GITHUB_TOKEN ??
-    process.env.GITHUB_TOKEN ??
-    process.env.GH_TOKEN ??
-    null;
+  // An unset Actions input arrives as an empty string, not as undefined. Treat it
+  // as absent so `token: ''` really does mean "publish with the GitHub Apps only".
+  const token = firstNonEmpty(
+    values.token as string | undefined,
+    process.env.SWARM_GITHUB_TOKEN,
+    process.env.GITHUB_TOKEN,
+    process.env.GH_TOKEN,
+  );
 
   const engineOverride = values.engine as EngineName | undefined;
   if (engineOverride && !['claude', 'codex', 'mock'].includes(engineOverride)) {
@@ -144,6 +146,13 @@ async function reviewCommand(args: {
 
   if (values['fail-on'] === 'request_changes' && result.outcome.event === 'REQUEST_CHANGES') return 1;
   return 0;
+}
+
+function firstNonEmpty(...candidates: (string | undefined)[]): string | null {
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate;
+  }
+  return null;
 }
 
 function resolvePrNumber(explicit: string | undefined): number | null {
@@ -222,8 +231,11 @@ async function doctorCommand(args: {
     report(ok || !isDefault, `엔진 \`${name}\`: ${ok ? '사용 가능' : '실행 불가'}${isDefault ? ' (기본 엔진)' : ''}`);
   }
 
-  const token = process.env.SWARM_GITHUB_TOKEN ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
-  report(Boolean(token), 'GitHub 토큰 (GITHUB_TOKEN)');
+  const token = firstNonEmpty(process.env.SWARM_GITHUB_TOKEN, process.env.GITHUB_TOKEN, process.env.GH_TOKEN);
+  const hasApps =
+    config.publish.mode === 'apps' &&
+    [...buildRegistry(config, workdir).values()].some((agent) => readAppCredentials(agent.appEnvPrefix) !== null);
+  report(Boolean(token) || hasApps, `GitHub 자격 (GITHUB_TOKEN${hasApps ? ' 또는 GitHub App' : ''})`);
 
   const registry = buildRegistry(config, workdir);
   if (config.publish.mode === 'apps') {

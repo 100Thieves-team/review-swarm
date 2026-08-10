@@ -92,11 +92,9 @@ async function reviewCommand(args) {
         logger.error('--pr <number> 또는 pull_request 이벤트 payload가 필요합니다');
         return 2;
     }
-    const token = values.token ??
-        process.env.SWARM_GITHUB_TOKEN ??
-        process.env.GITHUB_TOKEN ??
-        process.env.GH_TOKEN ??
-        null;
+    // An unset Actions input arrives as an empty string, not as undefined. Treat it
+    // as absent so `token: ''` really does mean "publish with the GitHub Apps only".
+    const token = firstNonEmpty(values.token, process.env.SWARM_GITHUB_TOKEN, process.env.GITHUB_TOKEN, process.env.GH_TOKEN);
     const engineOverride = values.engine;
     if (engineOverride && !['claude', 'codex', 'mock'].includes(engineOverride)) {
         logger.error(`--engine 값이 잘못되었습니다: ${engineOverride}`);
@@ -123,6 +121,13 @@ async function reviewCommand(args) {
     if (values['fail-on'] === 'request_changes' && result.outcome.event === 'REQUEST_CHANGES')
         return 1;
     return 0;
+}
+function firstNonEmpty(...candidates) {
+    for (const candidate of candidates) {
+        if (typeof candidate === 'string' && candidate.trim())
+            return candidate;
+    }
+    return null;
 }
 function resolvePrNumber(explicit) {
     if (explicit) {
@@ -190,8 +195,10 @@ async function doctorCommand(args) {
         const isDefault = config.engine.default === name;
         report(ok || !isDefault, `엔진 \`${name}\`: ${ok ? '사용 가능' : '실행 불가'}${isDefault ? ' (기본 엔진)' : ''}`);
     }
-    const token = process.env.SWARM_GITHUB_TOKEN ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
-    report(Boolean(token), 'GitHub 토큰 (GITHUB_TOKEN)');
+    const token = firstNonEmpty(process.env.SWARM_GITHUB_TOKEN, process.env.GITHUB_TOKEN, process.env.GH_TOKEN);
+    const hasApps = config.publish.mode === 'apps' &&
+        [...buildRegistry(config, workdir).values()].some((agent) => readAppCredentials(agent.appEnvPrefix) !== null);
+    report(Boolean(token) || hasApps, `GitHub 자격 (GITHUB_TOKEN${hasApps ? ' 또는 GitHub App' : ''})`);
     const registry = buildRegistry(config, workdir);
     if (config.publish.mode === 'apps') {
         for (const agent of registry.values()) {
