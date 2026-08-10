@@ -26,7 +26,11 @@ concurrency:
 
 jobs:
   review:
+    # 리뷰를 돌릴 PR 작성자. 러너가 개인 맥이고 모델 호출도 개인 구독이라
+    # 우선 본인 PR만 대상으로 한다. 팀에 열 때 배열에 로그인 아이디를 추가하면 된다.
+    #   예: '["bebeis", "dbwp031", "2wndrhs"]'
     if: >-
+      contains(fromJSON('["bebeis"]'), github.event.pull_request.user.login) &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.draft == false
     runs-on: [self-hosted, review-swarm]
