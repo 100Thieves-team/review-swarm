@@ -40,6 +40,9 @@ jobs:
       - name: Checkout PR
         uses: actions/checkout@v4
         with:
+          # 워크플로 토큰을 체크아웃에 남기지 않는다. 리뷰는 로컬 git 읽기(diff /
+          # merge-base)만 하고 GitHub 호출은 자체 토큰·App 자격으로 하므로 필요 없다.
+          persist-credentials: false
           # 에이전트가 호출부·구현체·테스트를 직접 열어봐야 하므로 전체 히스토리가 필요하다.
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
@@ -51,7 +54,11 @@ jobs:
           node-version: '22'
 
       - name: Review
-        uses: 100Thieves-team/review-swarm@main
+        # 커밋 SHA로 고정한다. 이 액션에는 GitHub App PRIVATE_KEY 7쌍이 env로 전달되고
+        # pull-requests:write 권한이 붙으므로, @main 같은 mutable 참조를 쓰면 그 브랜치에
+        # 들어간 코드가 다음 PR에서 그대로 self-hosted 러너에서 실행된다.
+        # 업데이트할 때는 review-swarm의 새 커밋을 확인한 뒤 이 SHA를 올린다.
+        uses: 100Thieves-team/review-swarm@5827306c08236303bc563992c191a7ddf0a2e609
         with:
           fail-on: never
           upload-artifacts: 'true'

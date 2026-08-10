@@ -211,6 +211,8 @@ publish:
 3. **`checks:`는 PR 코드를 실행한다.** `npm test` 같은 명령을 넣으면 그 코드가 러너에서 돈다. fork PR을 리뷰한다면 반드시 비워라.
 4. **엔진은 읽기 전용으로 돈다.** claude는 `--tools Read,Grep,Glob`, codex는 `--sandbox read-only`로 실행된다. 설정에서 이걸 완화하지 마라.
 5. **프롬프트 인젝션을 데이터로 취급한다.** diff, PR 본문, 커밋 메시지, 테스트 출력은 blackboard에서 "신뢰할 수 없는 입력"으로 명시적으로 라벨링되고, 모든 페르소나는 그 안의 지시문을 따르지 말고 오히려 `prompt-injection` finding으로 보고하도록 지시받는다. 최종 머지 판정은 모델이 아니라 결정론적 정책 게이트가 내린다.
+6. **이 액션을 40자리 커밋 SHA로 고정하라.** `@main` 같은 mutable 참조를 쓰면, 이 저장소의 `main`에 들어간 코드가 다음 PR에서 그대로 대상 저장소의 self-hosted 러너에서 실행된다. 그 실행에는 GitHub App PRIVATE_KEY들이 env로 전달되고 `pull-requests: write` 권한이 붙는다. fork 가드는 이 경로를 막지 못한다 — 공격 표면이 PR이 아니라 참조된 액션이기 때문이다. 업데이트는 새 커밋을 확인한 뒤 SHA를 올리는 방식으로 한다.
+7. **체크아웃에 토큰을 남기지 않는다.** 템플릿은 `persist-credentials: false`를 쓴다. 리뷰는 로컬 git 읽기(`diff`/`merge-base`)만 하고 GitHub 호출은 자체 토큰·App 자격으로 하므로 필요 없다. `fetch-depth: 0`으로 전체 히스토리를 받으므로 추가 fetch도 일어나지 않는다.
 
 ## 동작 세부
 

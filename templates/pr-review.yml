@@ -36,12 +36,20 @@ jobs:
       - name: Checkout PR
         uses: actions/checkout@v4
         with:
+          # 워크플로 토큰을 체크아웃에 남기지 않는다. 리뷰는 로컬 git 읽기(diff /
+          # merge-base)만 하고 GitHub 호출은 자체 토큰·App 자격으로 하므로 필요 없다.
+          # fetch-depth: 0으로 전체 히스토리를 받아두면 추가 fetch도 일어나지 않는다.
+          persist-credentials: false
           # 에이전트가 관련 코드를 직접 읽어야 하므로 전체 히스토리를 받는다.
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Review
-        uses: ORG/REPO/review-swarm@main # ← 이 도구를 담은 저장소로 바꿔라
+        # ← 이 도구를 담은 저장소로 바꾸고, 반드시 40자리 커밋 SHA로 고정하라.
+        # 이 액션에는 App PRIVATE_KEY들이 env로 전달되고 pull-requests:write 권한이
+        # 붙는다. @main 같은 mutable 참조를 쓰면 그 브랜치에 들어간 코드가 다음 PR에서
+        # 그대로 러너에서 실행된다.
+        uses: ORG/REPO/review-swarm@0000000000000000000000000000000000000000
         with:
           fail-on: never
           upload-artifacts: 'true'
