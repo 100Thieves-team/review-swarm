@@ -54,28 +54,18 @@ jobs:
           node-version: '22'
 
       - name: Review
-        # 커밋 SHA로 고정한다. 이 액션에는 GitHub App PRIVATE_KEY 7쌍이 env로 전달되고
-        # pull-requests:write 권한이 붙으므로, @main 같은 mutable 참조를 쓰면 그 브랜치에
-        # 들어간 코드가 다음 PR에서 그대로 self-hosted 러너에서 실행된다.
+        # 커밋 SHA로 고정한다. 이 액션은 pull-requests:write 권한으로 self-hosted
+        # 러너에서 실행되므로, @main 같은 mutable 참조를 쓰면 그 브랜치에 들어간 코드가
+        # 다음 PR에서 그대로 돌게 된다.
         # 업데이트할 때는 review-swarm의 새 커밋을 확인한 뒤 이 SHA를 올린다.
-        uses: 100Thieves-team/review-swarm@5827306c08236303bc563992c191a7ddf0a2e609
+        uses: 100Thieves-team/review-swarm@6d586007e5a018c4eedef98b071e3ce24d1f94b5
         with:
           fail-on: never
           upload-artifacts: 'true'
-        env:
-          # publish.mode를 apps로 바꾸기 전까지는 아래 시크릿이 없어도 동작한다.
-          # (없는 에이전트는 GITHUB_TOKEN으로 게시되고 코멘트 머리에 페르소나 이름이 붙는다)
-          SWARM_SECURITY_APP_ID: ${{ secrets.SWARM_SECURITY_APP_ID }}
-          SWARM_SECURITY_PRIVATE_KEY: ${{ secrets.SWARM_SECURITY_PRIVATE_KEY }}
-          SWARM_CONSISTENCY_APP_ID: ${{ secrets.SWARM_CONSISTENCY_APP_ID }}
-          SWARM_CONSISTENCY_PRIVATE_KEY: ${{ secrets.SWARM_CONSISTENCY_PRIVATE_KEY }}
-          SWARM_PERFORMANCE_APP_ID: ${{ secrets.SWARM_PERFORMANCE_APP_ID }}
-          SWARM_PERFORMANCE_PRIVATE_KEY: ${{ secrets.SWARM_PERFORMANCE_PRIVATE_KEY }}
-          SWARM_ARCHITECT_APP_ID: ${{ secrets.SWARM_ARCHITECT_APP_ID }}
-          SWARM_ARCHITECT_PRIVATE_KEY: ${{ secrets.SWARM_ARCHITECT_PRIVATE_KEY }}
-          SWARM_PRAGMATIST_APP_ID: ${{ secrets.SWARM_PRAGMATIST_APP_ID }}
-          SWARM_PRAGMATIST_PRIVATE_KEY: ${{ secrets.SWARM_PRAGMATIST_PRIVATE_KEY }}
-          SWARM_COLLABORATOR_APP_ID: ${{ secrets.SWARM_COLLABORATOR_APP_ID }}
-          SWARM_COLLABORATOR_PRIVATE_KEY: ${{ secrets.SWARM_COLLABORATOR_PRIVATE_KEY }}
-          SWARM_MEDIATOR_APP_ID: ${{ secrets.SWARM_MEDIATOR_APP_ID }}
-          SWARM_MEDIATOR_PRIVATE_KEY: ${{ secrets.SWARM_MEDIATOR_PRIVATE_KEY }}
+        # 시크릿을 전달하지 않는다. `.review-swarm.yaml`이 publish.mode: single이라
+        # 모든 코멘트는 워크플로 기본 토큰(github-actions[bot])으로 게시되고,
+        # 어느 페르소나가 낸 지적인지는 코멘트 머리말에 표시된다.
+        #
+        # 에이전트마다 별도 봇 계정으로 보이게 하려면 GitHub App 7개를 만들고
+        # SWARM_<AGENT>_APP_ID / _PRIVATE_KEY 를 env로 넘긴 뒤 mode를 apps로 바꾼다.
+        # 절차는 review-swarm 저장소 README의 "에이전트별 GitHub App을 만든다" 참고.

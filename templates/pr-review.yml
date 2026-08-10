@@ -46,26 +46,33 @@ jobs:
 
       - name: Review
         # ← 이 도구를 담은 저장소로 바꾸고, 반드시 40자리 커밋 SHA로 고정하라.
-        # 이 액션에는 App PRIVATE_KEY들이 env로 전달되고 pull-requests:write 권한이
-        # 붙는다. @main 같은 mutable 참조를 쓰면 그 브랜치에 들어간 코드가 다음 PR에서
+        # 이 액션은 pull-requests:write 권한으로 self-hosted 러너에서 실행되므로,
+        # @main 같은 mutable 참조를 쓰면 그 브랜치에 들어간 코드가 다음 PR에서
         # 그대로 러너에서 실행된다.
         uses: ORG/REPO/review-swarm@0000000000000000000000000000000000000000
         with:
           fail-on: never
           upload-artifacts: 'true'
-        env:
-          # --- 에이전트별 GitHub App 자격 (없으면 공용 토큰으로 게시된다) ---
-          SWARM_SECURITY_APP_ID: ${{ secrets.SWARM_SECURITY_APP_ID }}
-          SWARM_SECURITY_PRIVATE_KEY: ${{ secrets.SWARM_SECURITY_PRIVATE_KEY }}
-          SWARM_CONSISTENCY_APP_ID: ${{ secrets.SWARM_CONSISTENCY_APP_ID }}
-          SWARM_CONSISTENCY_PRIVATE_KEY: ${{ secrets.SWARM_CONSISTENCY_PRIVATE_KEY }}
-          SWARM_PERFORMANCE_APP_ID: ${{ secrets.SWARM_PERFORMANCE_APP_ID }}
-          SWARM_PERFORMANCE_PRIVATE_KEY: ${{ secrets.SWARM_PERFORMANCE_PRIVATE_KEY }}
-          SWARM_ARCHITECT_APP_ID: ${{ secrets.SWARM_ARCHITECT_APP_ID }}
-          SWARM_ARCHITECT_PRIVATE_KEY: ${{ secrets.SWARM_ARCHITECT_PRIVATE_KEY }}
-          SWARM_PRAGMATIST_APP_ID: ${{ secrets.SWARM_PRAGMATIST_APP_ID }}
-          SWARM_PRAGMATIST_PRIVATE_KEY: ${{ secrets.SWARM_PRAGMATIST_PRIVATE_KEY }}
-          SWARM_COLLABORATOR_APP_ID: ${{ secrets.SWARM_COLLABORATOR_APP_ID }}
-          SWARM_COLLABORATOR_PRIVATE_KEY: ${{ secrets.SWARM_COLLABORATOR_PRIVATE_KEY }}
-          SWARM_MEDIATOR_APP_ID: ${{ secrets.SWARM_MEDIATOR_APP_ID }}
-          SWARM_MEDIATOR_PRIVATE_KEY: ${{ secrets.SWARM_MEDIATOR_PRIVATE_KEY }}
+        # 기본값(publish.mode: single)에서는 시크릿이 전혀 필요 없다. 모든 코멘트가
+        # github-actions[bot]으로 게시되고, 어느 페르소나의 지적인지는 코멘트
+        # 머리말에 표시된다. 이 상태로 먼저 며칠 써보길 권한다.
+        #
+        # 에이전트마다 별도 봇 계정으로 보이게 하려면 GitHub App을 만들어 아래를 켜고
+        # `.review-swarm.yaml`의 publish.mode를 apps로 바꾼다. 만든 것만 넣으면 되고,
+        # 나머지 에이전트는 계속 공용 토큰으로 게시된다. 절차는 README 참고.
+        #
+        # env:
+        #   SWARM_SECURITY_APP_ID: ${{ secrets.SWARM_SECURITY_APP_ID }}
+        #   SWARM_SECURITY_PRIVATE_KEY: ${{ secrets.SWARM_SECURITY_PRIVATE_KEY }}
+        #   SWARM_CONSISTENCY_APP_ID: ${{ secrets.SWARM_CONSISTENCY_APP_ID }}
+        #   SWARM_CONSISTENCY_PRIVATE_KEY: ${{ secrets.SWARM_CONSISTENCY_PRIVATE_KEY }}
+        #   SWARM_PERFORMANCE_APP_ID: ${{ secrets.SWARM_PERFORMANCE_APP_ID }}
+        #   SWARM_PERFORMANCE_PRIVATE_KEY: ${{ secrets.SWARM_PERFORMANCE_PRIVATE_KEY }}
+        #   SWARM_ARCHITECT_APP_ID: ${{ secrets.SWARM_ARCHITECT_APP_ID }}
+        #   SWARM_ARCHITECT_PRIVATE_KEY: ${{ secrets.SWARM_ARCHITECT_PRIVATE_KEY }}
+        #   SWARM_PRAGMATIST_APP_ID: ${{ secrets.SWARM_PRAGMATIST_APP_ID }}
+        #   SWARM_PRAGMATIST_PRIVATE_KEY: ${{ secrets.SWARM_PRAGMATIST_PRIVATE_KEY }}
+        #   SWARM_COLLABORATOR_APP_ID: ${{ secrets.SWARM_COLLABORATOR_APP_ID }}
+        #   SWARM_COLLABORATOR_PRIVATE_KEY: ${{ secrets.SWARM_COLLABORATOR_PRIVATE_KEY }}
+        #   SWARM_MEDIATOR_APP_ID: ${{ secrets.SWARM_MEDIATOR_APP_ID }}
+        #   SWARM_MEDIATOR_PRIVATE_KEY: ${{ secrets.SWARM_MEDIATOR_PRIVATE_KEY }}
