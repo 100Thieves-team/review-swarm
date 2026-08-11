@@ -177,6 +177,8 @@ export const DEFAULT_CONFIG = {
         maxInlinePerAgent: 6,
         maxInlineTotal: 25,
         maxSnapDistance: 20,
+        // Keeps every level inline by default; raise it to move minor notes to the summary.
+        inlineMinSeverity: 'info',
         dropBelowSeverity: 'info',
         dropBelowConfidence: 0.45,
     },

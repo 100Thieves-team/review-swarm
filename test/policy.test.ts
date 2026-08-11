@@ -94,6 +94,26 @@ describe('applyPolicy — filtering and caps', () => {
     assert.equal(outcome.dropped.length, 1);
   });
 
+  it('keeps a minor finding but moves it out of the diff', () => {
+    // The complaint was repetition, not minor feedback — so low severity is
+    // reported in the summary rather than deleted.
+    const relaxed = testConfig({ policy: { ...config.policy, inlineMinSeverity: 'medium' } });
+    const minor = makeFinding({ severity: 'low' });
+    const normal = makeFinding({ severity: 'medium' });
+    const outcome = applyPolicy(relaxed, registry, [minor, normal]);
+
+    assert.deepEqual(outcome.inline.map((f) => f.id), [normal.id]);
+    assert.deepEqual(outcome.summaryOnly.map((f) => f.id), [minor.id]);
+    assert.equal(outcome.dropped.length, 0, 'nothing is discarded');
+    assert.ok(outcome.notes.some((note) => note.includes('심각도가')));
+  });
+
+  it('keeps every severity inline under the default threshold', () => {
+    const outcome = applyPolicy(config, registry, [makeFinding({ severity: 'low' })]);
+    assert.equal(outcome.inline.length, 1);
+    assert.equal(outcome.summaryOnly.length, 0);
+  });
+
   it('routes unanchored findings to the summary', () => {
     const outcome = applyPolicy(config, registry, [makeFinding({ anchor: null })]);
     assert.equal(outcome.inline.length, 0);

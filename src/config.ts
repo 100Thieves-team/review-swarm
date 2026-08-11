@@ -114,6 +114,15 @@ export interface PolicyConfig {
   maxInlineTotal: number;
   /** Findings snapped further than this land in the summary instead of inline. */
   maxSnapDistance: number;
+  /**
+   * Below this severity a finding is still reported, but in the summary rather
+   * than as an inline comment.
+   *
+   * Minor observations are worth keeping — they just should not compete for
+   * attention with the ones that block a merge, line by line in the diff.
+   */
+  inlineMinSeverity: Severity;
+  /** Below this severity a finding is discarded entirely. */
   dropBelowSeverity: Severity;
   dropBelowConfidence: number;
 }
@@ -350,6 +359,8 @@ export const DEFAULT_CONFIG: SwarmConfig = {
     maxInlinePerAgent: 6,
     maxInlineTotal: 25,
     maxSnapDistance: 20,
+    // Keeps every level inline by default; raise it to move minor notes to the summary.
+    inlineMinSeverity: 'info',
     dropBelowSeverity: 'info',
     dropBelowConfidence: 0.45,
   },

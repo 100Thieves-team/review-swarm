@@ -217,11 +217,14 @@ policy:
   maxInlinePerAgent: 5
   maxInlineTotal: 20
   maxSnapDistance: 20
-  # PR #51 실측: 실제로 반영한 지적은 medium/0.72·medium/0.85였고,
-  # 푸시마다 반복된 노이즈는 전부 low/0.55~0.60이었다. 그 사이에 바닥을 둔다.
-  # 놓치는 게 있다 싶으면 dropBelowSeverity를 low로 되돌려 관찰한다.
-  dropBelowSeverity: medium
-  dropBelowConfidence: 0.6
+  # low 지적도 버리지 않는다. 다만 인라인으로 diff에 줄줄이 달리면 정작 막아야 할
+  # 지적과 주목을 다툰다. medium 미만은 요약 섹션에 모아서 보여준다.
+  # (반복 자체는 별도 장치로 막는다 — 스레드 resolve/👎, 이전 리뷰 컨텍스트, 지문 중복 억제)
+  inlineMinSeverity: medium
+  # 실제로 버리는 것은 info뿐. 페르소나 지침이 확신도 0.5 미만은 내지 말라고 하므로
+  # 그 선에 맞춘다.
+  dropBelowSeverity: info
+  dropBelowConfidence: 0.5
 
 publish:
   # 처음에는 single로 시작해서 리뷰 품질을 확인하고,

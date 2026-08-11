@@ -78,6 +78,11 @@ export function applyPolicy(
       summaryOnly.push(finding);
       continue;
     }
+    // Minor notes stay in the review, just not line by line in the diff.
+    if (SEVERITY_RANK[finding.severity] < SEVERITY_RANK[config.policy.inlineMinSeverity]) {
+      summaryOnly.push(finding);
+      continue;
+    }
     if (inline.length >= config.policy.maxInlineTotal) {
       summaryOnly.push(finding);
       continue;
@@ -91,10 +96,14 @@ export function applyPolicy(
     inline.push(finding);
   }
 
-  const overflow = summaryOnly.filter((finding) => finding.anchor).length;
-  if (overflow > 0) notes.push(`인라인 코멘트 상한을 넘어 ${overflow}건은 요약으로 이동`);
-  const unanchored = summaryOnly.length - overflow;
+  const unanchored = summaryOnly.filter((finding) => !finding.anchor).length;
   if (unanchored > 0) notes.push(`diff에 앵커할 수 없어 ${unanchored}건은 요약으로 이동`);
+  const minor = summaryOnly.filter(
+    (finding) => finding.anchor && SEVERITY_RANK[finding.severity] < SEVERITY_RANK[config.policy.inlineMinSeverity],
+  ).length;
+  if (minor > 0) notes.push(`심각도가 \`${config.policy.inlineMinSeverity}\` 미만이라 ${minor}건은 요약으로 이동`);
+  const overflow = summaryOnly.length - unanchored - minor;
+  if (overflow > 0) notes.push(`인라인 코멘트 상한을 넘어 ${overflow}건은 요약으로 이동`);
 
   const blocking = kept.filter((finding) => finding.verdict === 'REQUEST_CHANGE');
   const event = resolveEvent(config, blocking.length, kept.length);
