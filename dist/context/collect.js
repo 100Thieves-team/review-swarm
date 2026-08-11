@@ -4,6 +4,7 @@ import { git, run } from "../util/exec.js";
 import { matchesAnyGlob } from "../util/glob.js";
 import { truncate, truncateTail } from "../util/text.js";
 import { changedFiles as toChangedFiles, parseUnifiedDiff, renderDiff } from "./diff.js";
+import { fetchLinkedIssues } from "./issues.js";
 export async function collectContext(options) {
     const { config, workdir, runDir, runId, pr, logger } = options;
     mkdirSync(runDir, { recursive: true });
@@ -36,6 +37,7 @@ export async function collectContext(options) {
     writeFileSync(diffPath, filteredDiff, 'utf8');
     const checks = await runChecks(config, workdir, logger);
     const teamRules = readTeamRules(config, workdir, logger);
+    const issues = await fetchLinkedIssues(pr, config.context.issues, logger);
     const context = {
         runId,
         workdir,
@@ -46,6 +48,7 @@ export async function collectContext(options) {
         changedFiles,
         checks,
         teamRules,
+        issues,
     };
     writeFileSync(join(runDir, 'context.json'), JSON.stringify({ ...context, diff: undefined }, null, 2), 'utf8');
     logger.info(`diff: ${changedFiles.length} files, ${changedFiles.reduce((n, f) => n + f.additions + f.deletions, 0)} changed lines` +

@@ -127,6 +127,14 @@ export interface CheckResult {
 }
 
 /** Everything every persona is allowed to see. The blackboard of the pattern. */
+export interface LinkedIssue {
+  identifier: string;
+  title: string;
+  description: string;
+  url: string;
+  state: string;
+}
+
 export interface ReviewContext {
   runId: string;
   workdir: string;
@@ -137,6 +145,8 @@ export interface ReviewContext {
   changedFiles: ChangedFile[];
   checks: CheckResult[];
   teamRules: string;
+  /** Tracker issues this PR references — the author's stated goal and scope. */
+  issues: LinkedIssue[];
 }
 
 export interface ChangedFile {

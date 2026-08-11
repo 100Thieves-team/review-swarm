@@ -12,9 +12,9 @@ import { mediate } from './pipeline/mediator.ts';
 import { applyPolicy, type PolicyOutcome } from './pipeline/policy.ts';
 import { route } from './pipeline/router.ts';
 import { verifyFindings } from './pipeline/verify.ts';
-import { fetchPullRequest, GitHubClient } from './publish/github.ts';
+import { fetchPriorReview, fetchPullRequest, GitHubClient } from './publish/github.ts';
 import { publishReview, type PublishResult } from './publish/publish.ts';
-import { renderSummary } from './publish/render.ts';
+import { parseMarker, parseTitle, renderSummary } from './publish/render.ts';
 import type { Finding, PullRequestInfo } from './types.ts';
 import { shortId } from './util/text.ts';
 import { createLogger, timedStage, type Logger } from './util/logger.ts';
@@ -62,7 +62,7 @@ export async function runReview(options: ReviewOptions): Promise<ReviewRunResult
   const config = applyOverrides(loaded, options);
   logger.info(configPath ? `config: ${configPath}` : 'config: built-in defaults');
 
-  const registry = buildRegistry(config, workdir);
+  const registry = buildRegistry(config, workdir, logger);
 
   const token = options.token;
   const pr =
@@ -85,8 +85,27 @@ export async function runReview(options: ReviewOptions): Promise<ReviewRunResult
   );
   if (ignoredFiles.length > 0) logger.debug(`ignored: ${ignoredFiles.join(', ')}`);
 
-  const blackboard = renderBlackboard(context, config);
+  // Fetched once: the mediator uses it to drop rephrased repeats, and publishing
+  // uses it to honour anything the author already closed.
+  const prior = token
+    ? await fetchPriorReview(
+        new GitHubClient(token, options.apiUrl, logger),
+        pr.owner,
+        pr.repo,
+        pr.number,
+        parseMarker,
+        parseTitle,
+        logger,
+      )
+    : [];
+  persist(runDir, 'prior-review.json', prior);
+  if (prior.length > 0) {
+    logger.info(`prior review: ${prior.length} findings, ${prior.filter((p) => p.dismissed).length} closed by the author`);
+  }
+
+  const blackboard = renderBlackboard(context, config, prior);
   persist(runDir, 'blackboard.md', blackboard);
+
 
   const routing = route(config, registry, context.changedFiles, context.diff);
   persist(runDir, 'routing.json', {
@@ -129,7 +148,7 @@ export async function runReview(options: ReviewOptions): Promise<ReviewRunResult
   });
 
   const mediation = await timedStage('조정자 판정', stageTimings, logger, () =>
-    mediate({ config, pool, registry, context, findings, logger }),
+    mediate({ config, pool, registry, context, findings, prior, logger }),
   );
   if (!mediation.ok && mediation.error) degraded.push(`조정자 실패: ${mediation.error}`);
 
@@ -152,10 +171,11 @@ export async function runReview(options: ReviewOptions): Promise<ReviewRunResult
       registry,
       outcome,
       fallbackToken: token,
+      prior,
       ...(options.apiUrl ? { apiUrl: options.apiUrl } : {}),
       dryRun: options.dryRun,
       logger,
-      makeSummary: (skipped) =>
+      makeSummary: (skipped, dismissed) =>
         renderSummary({
           config,
           context,
@@ -165,6 +185,7 @@ export async function runReview(options: ReviewOptions): Promise<ReviewRunResult
           outcome,
           mediatorSummary: mediation.summary,
           skipped,
+          dismissed,
           durationMs: Date.now() - startedAt,
           degraded,
         }),

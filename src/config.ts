@@ -74,6 +74,14 @@ export interface AgentConfig extends EngineOverride {
   personaFile?: string;
   /** Extra instructions appended to the built-in persona. */
   extraInstructions?: string;
+  /**
+   * Repo files inlined into this persona's prompt only.
+   *
+   * The place for knowledge the model cannot have: stack-version gotchas, past
+   * incidents, and this team's severity calibration. Kept per-agent so the
+   * security notes do not cost the performance analyst any context.
+   */
+  knowledgeFiles?: string[];
   /** Environment variable prefix for this agent's GitHub App credentials. */
   appEnvPrefix?: string;
 }
@@ -128,12 +136,26 @@ export interface CheckConfig {
   maxOutputChars: number;
 }
 
+export interface IssueTrackerConfig {
+  enabled: boolean;
+  /** Env var holding the tracker API key. Linear's `linear-issue-for-pr` workflow already sets one. */
+  apiKeyEnv: string;
+  apiUrl: string;
+  /** Regex matching issue keys in the PR title, body and branch name. */
+  keyPattern: string;
+  maxIssues: number;
+  maxCharsPerIssue: number;
+}
+
 export interface ContextConfig {
   diffContextLines: number;
   maxDiffChars: number;
   maxPromptDiffChars: number;
   teamRuleFiles: string[];
   maxTeamRuleChars: number;
+  /** Budget for one agent's `knowledgeFiles`, summed across its files. */
+  maxAgentKnowledgeChars: number;
+  issues: IssueTrackerConfig;
 }
 
 export interface SwarmConfig {
@@ -346,6 +368,15 @@ export const DEFAULT_CONFIG: SwarmConfig = {
     maxPromptDiffChars: 160_000,
     teamRuleFiles: ['CLAUDE.md', 'AGENTS.md', 'CONTRIBUTING.md', 'docs/review-rules.md', '.github/review-rules.md'],
     maxTeamRuleChars: 12_000,
+    maxAgentKnowledgeChars: 12_000,
+    issues: {
+      enabled: true,
+      apiKeyEnv: 'LINEAR_API_KEY',
+      apiUrl: 'https://api.linear.app/graphql',
+      keyPattern: '\\b[A-Z][A-Z0-9]{1,9}-\\d+\\b',
+      maxIssues: 3,
+      maxCharsPerIssue: 6_000,
+    },
   },
   checks: [],
   ignore: [

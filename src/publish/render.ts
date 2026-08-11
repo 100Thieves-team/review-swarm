@@ -17,8 +17,17 @@ export function summaryMarker(): string {
 
 /** Pull the fingerprint back out of an existing comment so reruns can skip it. */
 export function parseFingerprint(body: string): string | null {
+  return parseMarker(body)?.fingerprint ?? null;
+}
+
+export function parseMarker(body: string): { agent: string; fingerprint: string } | null {
   const match = new RegExp(`<!--\\s*${MARKER_PREFIX}\\s+agent=([\\w-]+)\\s+fp=([0-9a-f]+)\\s*-->`).exec(body);
-  return match?.[2] ?? null;
+  return match?.[1] && match[2] ? { agent: match[1], fingerprint: match[2] } : null;
+}
+
+/** The `### <title>` heading a finding comment is rendered with. */
+export function parseTitle(body: string): string {
+  return /^###\s+(.+)$/m.exec(body)?.[1]?.trim() ?? '';
 }
 
 const VERDICT_BADGE: Record<Verdict, string> = {
@@ -119,12 +128,14 @@ export interface SummaryInput {
   outcome: PolicyOutcome;
   mediatorSummary: string;
   skipped: Finding[];
+  dismissed: Finding[];
   durationMs: number;
   degraded: string[];
 }
 
 export function renderSummary(input: SummaryInput): string {
-  const { context, registry, routing, results, outcome, mediatorSummary, skipped, durationMs, degraded } = input;
+  const { context, registry, routing, results, outcome, mediatorSummary, skipped, dismissed, durationMs, degraded } =
+    input;
   const total = outcome.inline.length + outcome.summaryOnly.length;
 
   const counts = new Map<Verdict, number>();
@@ -187,6 +198,18 @@ ${renderFindingBody(finding, agent, { includeAgentHeader: true })}
         .join('\n')}\n\n</details>`,
     );
   }
+
+  if (dismissed.length > 0) {
+    parts.push(
+      `<details><summary>작성자가 닫은 항목 — 다시 올리지 않음 (${dismissed.length})</summary>\n\n${dismissed
+        .map((finding) => `- \`${finding.file}\` — ${escapeHtml(finding.title)}`)
+        .join('\n')}\n\n</details>`,
+    );
+  }
+
+  parts.push(
+    '<sub>같은 지적이 반복되면 해당 코멘트 스레드를 <b>Resolve conversation</b> 하거나 👎를 누르세요. 이 PR에서 다시 올라오지 않습니다.</sub>',
+  );
 
   if (outcome.notes.length > 0) {
     parts.push(

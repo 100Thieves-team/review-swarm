@@ -7,6 +7,7 @@ import { matchesAnyGlob } from '../util/glob.ts';
 import type { Logger } from '../util/logger.ts';
 import { truncate, truncateTail } from '../util/text.ts';
 import { changedFiles as toChangedFiles, parseUnifiedDiff, renderDiff, type ParsedDiff } from './diff.ts';
+import { fetchLinkedIssues } from './issues.ts';
 
 export interface CollectOptions {
   config: SwarmConfig;
@@ -65,6 +66,7 @@ export async function collectContext(options: CollectOptions): Promise<Collected
 
   const checks = await runChecks(config, workdir, logger);
   const teamRules = readTeamRules(config, workdir, logger);
+  const issues = await fetchLinkedIssues(pr, config.context.issues, logger);
 
   const context: ReviewContext = {
     runId,
@@ -76,6 +78,7 @@ export async function collectContext(options: CollectOptions): Promise<Collected
     changedFiles,
     checks,
     teamRules,
+    issues,
   };
 
   writeFileSync(join(runDir, 'context.json'), JSON.stringify({ ...context, diff: undefined }, null, 2), 'utf8');

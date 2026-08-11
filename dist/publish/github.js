@@ -270,6 +270,59 @@ export async function upsertIssueComment(client, owner, repo, number, marker, bo
     });
     return { id: created.id, updated: false };
 }
+const PRIOR_REVIEW_QUERY = `
+query($owner:String!,$repo:String!,$number:Int!){
+  repository(owner:$owner,name:$repo){
+    pullRequest(number:$number){
+      reviewThreads(first:100){
+        nodes{
+          isResolved
+          isOutdated
+          path
+          line
+          comments(first:1){
+            nodes{ body reactions(content: THUMBS_DOWN){ totalCount } }
+          }
+        }
+      }
+    }
+  }
+}`;
+/**
+ * What this swarm already said on this PR, and what the author closed.
+ *
+ * Resolving a thread or thumbs-downing a comment is the author saying "not doing
+ * this" — the review must respect that instead of re-raising it on every push.
+ * Best-effort: an unavailable GraphQL API degrades to "no history", never fails.
+ */
+export async function fetchPriorReview(client, owner, repo, number, parseMarker, parseTitle, logger) {
+    let data;
+    try {
+        data = await client.graphql(PRIOR_REVIEW_QUERY, { owner, repo, number });
+    }
+    catch (error) {
+        logger?.warn(`could not read prior review threads: ${String(error)}`);
+        return [];
+    }
+    const out = [];
+    for (const thread of data.repository?.pullRequest?.reviewThreads?.nodes ?? []) {
+        const comment = thread.comments?.nodes?.[0];
+        const body = comment?.body ?? '';
+        const marker = parseMarker(body);
+        if (!marker)
+            continue;
+        out.push({
+            fingerprint: marker.fingerprint,
+            agent: marker.agent,
+            title: parseTitle(body),
+            path: thread.path,
+            line: thread.line,
+            dismissed: thread.isResolved || (comment?.reactions?.totalCount ?? 0) > 0,
+            outdated: thread.isOutdated,
+        });
+    }
+    return out;
+}
 /** Collapse a stale review comment. Best-effort: never fails the run. */
 export async function minimizeComment(client, nodeId, logger) {
     try {

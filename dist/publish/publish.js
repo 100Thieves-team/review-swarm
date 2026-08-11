@@ -1,12 +1,12 @@
 import { authenticateApp, createReview, DEFAULT_API_URL, GitHubClient, listReviewComments, minimizeComment, readAppCredentials, upsertIssueComment, } from "./github.js";
 import { MARKER_PREFIX, parseFingerprint, renderFindingBody, summaryMarker } from "./render.js";
 export async function publishReview(options) {
-    const { config, context, registry, outcome, makeSummary, fallbackToken, dryRun, logger } = options;
+    const { config, context, registry, outcome, makeSummary, fallbackToken, prior, dryRun, logger } = options;
     const apiUrl = options.apiUrl ?? DEFAULT_API_URL;
     const { owner, repo, number, headSha } = context.pr;
-    const result = { posted: [], skipped: [], errors: [], summaryUrl: null };
+    const result = { posted: [], skipped: [], dismissed: [], errors: [], summaryUrl: null };
     if (config.publish.mode === 'none' || dryRun) {
-        const summary = makeSummary([]);
+        const summary = makeSummary([], []);
         logger.info(dryRun ? 'dry run — nothing posted' : 'publish.mode=none — nothing posted');
         logger.debug(`summary preview:\n${summary}`);
         return result;
@@ -18,21 +18,27 @@ export async function publishReview(options) {
         return result;
     }
     const baseClient = new GitHubClient(baseIdentity.token, apiUrl, logger);
-    // Existing fingerprints let a re-run on a new commit stay quiet about what it
-    // already said, instead of repeating every comment on every push.
-    const existing = config.publish.skipDuplicates
+    const existing = config.publish.minimizeStale
         ? await listReviewComments(baseClient, owner, repo, number).catch((error) => {
             logger.warn(`could not list existing comments: ${String(error)}`);
             return [];
         })
         : [];
-    const seen = new Set(existing.map((comment) => parseFingerprint(comment.body)).filter((fp) => !!fp));
+    // A dismissal is the author's decision, so it is enforced here rather than left
+    // to the mediator's judgement — the model advises, this gate is absolute.
+    const dismissed = new Set(prior.filter((entry) => entry.dismissed).map((entry) => entry.fingerprint));
+    const seen = new Set(prior.map((entry) => entry.fingerprint));
     const fresh = [];
     for (const finding of outcome.inline) {
-        if (seen.has(finding.fingerprint))
+        if (dismissed.has(finding.fingerprint))
+            result.dismissed.push(finding);
+        else if (config.publish.skipDuplicates && seen.has(finding.fingerprint))
             result.skipped.push(finding);
         else
             fresh.push(finding);
+    }
+    if (result.dismissed.length > 0) {
+        logger.info(`${result.dismissed.length} findings suppressed — closed by the author earlier`);
     }
     const byAgent = new Map();
     for (const finding of fresh) {
@@ -67,7 +73,7 @@ export async function publishReview(options) {
     // The gate speaks last, and it is the only identity allowed to change the state.
     const summaryAgentId = config.publish.summaryAgent;
     const summaryIdentity = identities.get(summaryAgentId) ?? identities.get('__fallback__');
-    const summaryBody = makeSummary(result.skipped);
+    const summaryBody = makeSummary(result.skipped, result.dismissed);
     if (summaryIdentity) {
         const client = new GitHubClient(summaryIdentity.token, apiUrl, logger);
         if (outcome.event !== 'REQUEST_CHANGES') {

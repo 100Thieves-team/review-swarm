@@ -195,6 +195,15 @@ export const DEFAULT_CONFIG = {
         maxPromptDiffChars: 160_000,
         teamRuleFiles: ['CLAUDE.md', 'AGENTS.md', 'CONTRIBUTING.md', 'docs/review-rules.md', '.github/review-rules.md'],
         maxTeamRuleChars: 12_000,
+        maxAgentKnowledgeChars: 12_000,
+        issues: {
+            enabled: true,
+            apiKeyEnv: 'LINEAR_API_KEY',
+            apiUrl: 'https://api.linear.app/graphql',
+            keyPattern: '\\b[A-Z][A-Z0-9]{1,9}-\\d+\\b',
+            maxIssues: 3,
+            maxCharsPerIssue: 6_000,
+        },
     },
     checks: [],
     ignore: [

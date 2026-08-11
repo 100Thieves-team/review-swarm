@@ -53,6 +53,10 @@ jobs:
         with:
           fail-on: never
           upload-artifacts: 'true'
+        env:
+          # 연결된 이슈의 목표·인수 조건·범위 밖 항목을 리뷰 컨텍스트로 넣는다.
+          # 없으면 경고만 남기고 PR 본문만으로 진행한다.
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
         # 기본값(publish.mode: single)에서는 시크릿이 전혀 필요 없다. 모든 코멘트가
         # github-actions[bot]으로 게시되고, 어느 페르소나의 지적인지는 코멘트
         # 머리말에 표시된다. 이 상태로 먼저 며칠 써보길 권한다.

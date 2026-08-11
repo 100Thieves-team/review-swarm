@@ -417,6 +417,97 @@ export async function upsertIssueComment(
   return { id: created.id, updated: false };
 }
 
+export interface PriorFinding {
+  fingerprint: string;
+  agent: string;
+  title: string;
+  path: string | null;
+  line: number | null;
+  /** The author closed this: thread resolved, or thumbs-down on the comment. */
+  dismissed: boolean;
+  /** The lines it was anchored to have since changed. */
+  outdated: boolean;
+}
+
+const PRIOR_REVIEW_QUERY = `
+query($owner:String!,$repo:String!,$number:Int!){
+  repository(owner:$owner,name:$repo){
+    pullRequest(number:$number){
+      reviewThreads(first:100){
+        nodes{
+          isResolved
+          isOutdated
+          path
+          line
+          comments(first:1){
+            nodes{ body reactions(content: THUMBS_DOWN){ totalCount } }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+interface ReviewThreadsResponse {
+  repository?: {
+    pullRequest?: {
+      reviewThreads?: {
+        nodes?: {
+          isResolved: boolean;
+          isOutdated: boolean;
+          path: string | null;
+          line: number | null;
+          comments?: { nodes?: { body?: string; reactions?: { totalCount?: number } }[] };
+        }[];
+      };
+    };
+  };
+}
+
+/**
+ * What this swarm already said on this PR, and what the author closed.
+ *
+ * Resolving a thread or thumbs-downing a comment is the author saying "not doing
+ * this" — the review must respect that instead of re-raising it on every push.
+ * Best-effort: an unavailable GraphQL API degrades to "no history", never fails.
+ */
+export async function fetchPriorReview(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  number: number,
+  parseMarker: (body: string) => { agent: string; fingerprint: string } | null,
+  parseTitle: (body: string) => string,
+  logger?: Logger,
+): Promise<PriorFinding[]> {
+  let data: ReviewThreadsResponse;
+  try {
+    data = await client.graphql<ReviewThreadsResponse>(PRIOR_REVIEW_QUERY, { owner, repo, number });
+  } catch (error) {
+    logger?.warn(`could not read prior review threads: ${String(error)}`);
+    return [];
+  }
+
+  const out: PriorFinding[] = [];
+  for (const thread of data.repository?.pullRequest?.reviewThreads?.nodes ?? []) {
+    const comment = thread.comments?.nodes?.[0];
+    const body = comment?.body ?? '';
+    const marker = parseMarker(body);
+    if (!marker) continue;
+
+    out.push({
+      fingerprint: marker.fingerprint,
+      agent: marker.agent,
+      title: parseTitle(body),
+      path: thread.path,
+      line: thread.line,
+      dismissed: thread.isResolved || (comment?.reactions?.totalCount ?? 0) > 0,
+      outdated: thread.isOutdated,
+    });
+  }
+  return out;
+}
+
 /** Collapse a stale review comment. Best-effort: never fails the run. */
 export async function minimizeComment(client: GitHubClient, nodeId: string, logger?: Logger): Promise<boolean> {
   try {

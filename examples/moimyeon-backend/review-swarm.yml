@@ -62,10 +62,14 @@ jobs:
         with:
           fail-on: never
           upload-artifacts: 'true'
-        # 시크릿을 전달하지 않는다. `.review-swarm.yaml`이 publish.mode: single이라
-        # 모든 코멘트는 워크플로 기본 토큰(github-actions[bot])으로 게시되고,
-        # 어느 페르소나가 낸 지적인지는 코멘트 머리말에 표시된다.
+        env:
+          # 연결된 이슈의 목표·인수 조건·범위 밖 항목을 리뷰 컨텍스트로 넣는다.
+          # 없으면 경고만 남기고 PR 본문만으로 진행한다.
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
         #
-        # 에이전트마다 별도 봇 계정으로 보이게 하려면 GitHub App 7개를 만들고
-        # SWARM_<AGENT>_APP_ID / _PRIVATE_KEY 를 env로 넘긴 뒤 mode를 apps로 바꾼다.
+        # 게시용 시크릿은 넘기지 않는다. `.review-swarm.yaml`이 publish.mode: single이라
+        # 모든 코멘트가 워크플로 기본 토큰(github-actions[bot])으로 게시되고,
+        # 어느 페르소나가 낸 지적인지는 코멘트 머리말에 표시된다.
+        # 에이전트마다 별도 봇 계정으로 보이게 하려면 GitHub App을 만들어
+        # SWARM_<AGENT>_APP_ID / _PRIVATE_KEY 를 위 env에 추가하고 mode를 apps로 바꾼다.
         # 절차는 review-swarm 저장소 README의 "에이전트별 GitHub App을 만든다" 참고.

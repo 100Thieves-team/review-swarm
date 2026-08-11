@@ -1,7 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { agentClass } from "../config.js";
 import { PERSONAS } from "./personas.js";
+import { truncate } from "../util/text.js";
 const METADATA = {
     security: {
         displayName: 'Security Sentinel',
@@ -39,7 +40,7 @@ const METADATA = {
         focus: '가치 충돌 조정, 최종 판정',
     },
 };
-export function buildRegistry(config, workdir) {
+export function buildRegistry(config, workdir, logger) {
     const registry = new Map();
     for (const [id, agent] of Object.entries(config.agents)) {
         if (!agent.enabled)
@@ -63,9 +64,45 @@ export function buildRegistry(config, workdir) {
             klass: agentClass(config, id),
             persona,
             focus: meta.focus,
+            knowledge: readKnowledge(id, agent.knowledgeFiles ?? [], workdir, config.context.maxAgentKnowledgeChars, logger),
         });
     }
     return registry;
+}
+/**
+ * Load one agent's knowledge files.
+ *
+ * A configured file that has gone missing is reported rather than skipped: the
+ * whole point of this channel is knowledge the model cannot recover on its own,
+ * so losing it silently is the worst failure mode.
+ */
+function readKnowledge(agentId, files, workdir, maxChars, logger) {
+    if (files.length === 0)
+        return '';
+    const sections = [];
+    let budget = maxChars;
+    for (const relative of files) {
+        if (budget <= 0) {
+            logger?.warn(`agents.${agentId}.knowledgeFiles: budget exhausted before "${relative}"`);
+            break;
+        }
+        const path = resolve(workdir, relative);
+        if (!existsSync(path)) {
+            logger?.warn(`agents.${agentId}.knowledgeFiles not found: ${relative}`);
+            continue;
+        }
+        try {
+            const body = truncate(readFileSync(path, 'utf8').trim(), budget);
+            if (!body)
+                continue;
+            sections.push(`### ${relative}\n${body}`);
+            budget -= body.length;
+        }
+        catch (error) {
+            logger?.warn(`agents.${agentId}.knowledgeFiles unreadable "${relative}": ${String(error)}`);
+        }
+    }
+    return sections.join('\n\n');
 }
 /** Experts are everyone who produces findings — the mediator only judges them. */
 export function expertIds(registry) {

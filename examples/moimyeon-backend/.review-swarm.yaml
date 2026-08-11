@@ -21,22 +21,64 @@ engine:
 # effort가 리뷰 속도를 가장 크게 좌우한다. low | medium | high | xhigh | max.
 # low는 놓치는 게 많고 xhigh는 한 턴에 수 분이 걸린다. medium이 실사용 균형점이다.
 # 특정 에이전트만 더 깊게 보고 싶으면 그 항목만 high로 올린다.
+# extraInstructions는 문서를 인라인하지 않고 **어디를 읽을지** 알려준다.
+# docs/conventions 12개 문서는 합쳐서 109KB라 전부 넣으면 프롬프트가 4배가 되고
+# 대부분은 해당 PR과 무관하다. 에이전트는 Read/Glob이 있으므로 필요할 때만 연다.
 agents:
   security:
     enabled: true
     effort: medium
+    knowledgeFiles: [docs/knowledge/security.md]
+    extraInstructions: |
+      인증·인가 관련 변경을 판단하기 전에 `docs/conventions/auth.md`를 반드시 읽어라.
+      이 서비스의 로그인은 Google OAuth이고 세션 인증 규칙과 인가 정책이 그 문서에 확정되어 있다.
+      컨트롤러가 인증 주체를 받는 방식도 정해져 있으므로, 개별 컨트롤러의 수동 검사는
+      규칙 위반일 수 있다 — 프레임워크가 이미 막는 문제를 보고하지 않도록 먼저 확인하라.
+      인증 기술은 `security-core` 모듈에 격벽으로 분리되어 있다(`docs/conventions/modules.md`).
+      core가 인증 기술에 직접 의존하면 그 자체가 지적 대상이다.
+
   consistency:
     enabled: true
     effort: medium
+    extraInstructions: |
+      트랜잭션 경계를 판단하기 전에 `docs/conventions/layers.md`의 "트랜잭션" 절을 읽어라.
+      이 저장소는 Controller / Facade / Service / Implement 4계층이고 어느 레이어가
+      트랜잭션을 여는지가 문서로 확정되어 있다. 그 규칙과 다른 위치에 @Transactional이
+      붙었는지를 기준으로 판단하라.
+      동시성 레이스는 `docs/conventions/errors.md`의 "유니크 충돌(동시성 레이스) 매핑 규칙"에
+      처리 방침이 정해져 있다. 그 방침으로 이미 커버되는 경우를 새 문제로 보고하지 마라.
+      스키마 변경은 `docs/conventions/storage.md`의 Flyway 절을 따른다.
+
   performance:
     enabled: true
     effort: medium
+    knowledgeFiles: [docs/knowledge/performance.md]
+    extraInstructions: |
+      JPA 사용 규칙은 `docs/conventions/storage.md`의 "JPA 매핑 규칙"과 "Repository" 절에
+      확정되어 있다. N+1이나 인덱스 문제를 제기하기 전에 그 규칙이 이미 방지하고 있는지 확인하라.
+      스키마의 단일 소스는 `schema.sql`이다. 인덱스 유무를 주장하려면 추측하지 말고 그 파일을 열어 확인하라.
+
   architect:
     enabled: true
     effort: medium
+    extraInstructions: |
+      이 저장소의 구조는 이미 문서로 확정되어 있다. 추상화를 제안하기 전에 반드시 확인하라.
+      - `docs/conventions/layers.md`: Controller / Facade / Service / Implement 4계층.
+        문서 앞부분의 "반드시 지킬 것은 두 가지다" 절이 핵심 계약이다.
+      - `docs/conventions/concepts.md`: "개념 간 지식 방향"과 "격벽을 지키는 규칙".
+      - `docs/conventions/modules.md`: 모듈 간 의존 규칙.
+      문서가 이미 정해 둔 구조를 "새 추상화"로 제안하지 마라. 반대로 이 규칙을 벗어난
+      의존·호출 방향은 취향 문제가 아니라 명백한 위반이므로 근거를 문서 절 이름으로 제시하라.
+
   pragmatist:
     enabled: true
     effort: medium
+    extraInstructions: |
+      주의: 이 저장소는 레이어·격벽 규칙이 `docs/conventions/`에 문서로 확정되어 있다.
+      문서가 요구해서 생긴 구조(Facade, Implement, 포트/어댑터 격벽 등)를 과설계로 오판하지 마라.
+      과설계 지적은 문서에 근거가 없는 새 추상화에만 해당한다.
+      판단이 서지 않으면 `docs/conventions/README.md`의 "1. 한 장 요약"을 먼저 확인하라.
+
   collaborator:
     enabled: true
     effort: medium
@@ -45,9 +87,19 @@ agents:
       모듈 경계(core / admin / clients / security / storage / support)를 넘는 의존이 새로 생기면 반드시 지적하라.
       DB 스키마 변경은 Flyway 마이그레이션(storage/db-core/src/main/resources/db/migration)으로만 이루어져야 하며,
       마이그레이션 버전 번호는 CI가 중복을 검사한다는 사실을 전제로 판단하라.
+      계약·컨벤션을 주장할 때는 다음 문서를 근거로 인용하라. 없는 규칙을 만들어내지 마라.
+      - API 계약(URI, DTO, 검증 위치, 응답 포맷): `docs/conventions/api-design.md`
+      - 테스트 분류와 레이어별 전략: `docs/conventions/testing.md`
+      - 커밋·PR 컨벤션: `docs/conventions/git.md`
+      - API 문서화: `docs/conventions/api-docs.md`
+
   mediator:
     enabled: true
     effort: medium
+    extraInstructions: |
+      이 저장소는 `docs/conventions/` 아래에 확정된 규칙 문서를 가지고 있다.
+      에이전트가 문서의 특정 절을 근거로 든 지적은 "취향"으로 기각하지 마라.
+      반대로 문서에 근거가 없는 구조 제안은 근거 부족으로 판단하라.
 
 router:
   always: [security, pragmatist]
@@ -165,8 +217,11 @@ policy:
   maxInlinePerAgent: 5
   maxInlineTotal: 20
   maxSnapDistance: 20
-  dropBelowSeverity: info
-  dropBelowConfidence: 0.45
+  # PR #51 실측: 실제로 반영한 지적은 medium/0.72·medium/0.85였고,
+  # 푸시마다 반복된 노이즈는 전부 low/0.55~0.60이었다. 그 사이에 바닥을 둔다.
+  # 놓치는 게 있다 싶으면 dropBelowSeverity를 low로 되돌려 관찰한다.
+  dropBelowSeverity: medium
+  dropBelowConfidence: 0.6
 
 publish:
   # 처음에는 single로 시작해서 리뷰 품질을 확인하고,
@@ -184,15 +239,14 @@ context:
   diffContextLines: 5
   maxDiffChars: 600000
   maxPromptDiffChars: 160000
-  # 실제 컨벤션은 docs/conventions/ 아래 12개 문서에 있다. README.md가 허브라
-  # 여기에 요약과 링크가 모두 들어 있고, 에이전트는 Read/Glob으로 하위 문서를 직접
-  # 열어볼 수 있으므로 허브 + 모듈 경계 문서만 주입한다.
-  # (CLAUDE.md / AGENTS.md는 현재 제목 한 줄뿐이라 사실상 기여하지 않는다.)
+  # CLAUDE.md는 AGENTS.md 심링크라 하나만 넣는다(둘 다 넣으면 같은 내용이 두 번 실린다).
+  # 컨벤션 상세 12개 문서는 합쳐 109KB라 인라인하지 않는다. README.md가 허브로 요약과
+  # 링크를 모두 갖고 있고, 에이전트는 Read/Glob으로 하위 문서를 직접 열 수 있다.
   teamRuleFiles:
-    - CLAUDE.md
     - AGENTS.md
     - docs/conventions/README.md
     - docs/conventions/modules.md
+    - docs/knowledge/README.md
   maxTeamRuleChars: 20000
 
 # 비워 둔다. ci.yml이 이미 GitHub 호스티드 러너에서 ktlintCheck와 test를 돌린다.

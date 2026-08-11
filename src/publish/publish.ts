@@ -16,6 +16,7 @@ import {
   type ReviewComment,
 } from './github.ts';
 import { MARKER_PREFIX, parseFingerprint, renderFindingBody, summaryMarker } from './render.ts';
+import type { PriorFinding } from './github.ts';
 
 export interface PublishOptions {
   config: SwarmConfig;
@@ -23,7 +24,9 @@ export interface PublishOptions {
   registry: Map<string, AgentDefinition>;
   outcome: PolicyOutcome;
   /** Built after duplicate detection, because the summary reports what was skipped. */
-  makeSummary: (skipped: Finding[]) => string;
+  makeSummary: (skipped: Finding[], dismissed: Finding[]) => string;
+  /** Prior review state, fetched once by the orchestrator and shared with the mediator. */
+  prior: PriorFinding[];
   fallbackToken: string | null;
   apiUrl?: string;
   dryRun: boolean;
@@ -32,20 +35,23 @@ export interface PublishOptions {
 
 export interface PublishResult {
   posted: { agent: string; identity: string; comments: number; url: string | null }[];
+  /** Already posted on this PR — same fingerprint. */
   skipped: Finding[];
+  /** The author closed this earlier; not posted again. */
+  dismissed: Finding[];
   errors: string[];
   summaryUrl: string | null;
 }
 
 export async function publishReview(options: PublishOptions): Promise<PublishResult> {
-  const { config, context, registry, outcome, makeSummary, fallbackToken, dryRun, logger } = options;
+  const { config, context, registry, outcome, makeSummary, fallbackToken, prior, dryRun, logger } = options;
   const apiUrl = options.apiUrl ?? DEFAULT_API_URL;
   const { owner, repo, number, headSha } = context.pr;
 
-  const result: PublishResult = { posted: [], skipped: [], errors: [], summaryUrl: null };
+  const result: PublishResult = { posted: [], skipped: [], dismissed: [], errors: [], summaryUrl: null };
 
   if (config.publish.mode === 'none' || dryRun) {
-    const summary = makeSummary([]);
+    const summary = makeSummary([], []);
     logger.info(dryRun ? 'dry run — nothing posted' : 'publish.mode=none — nothing posted');
     logger.debug(`summary preview:\n${summary}`);
     return result;
@@ -60,20 +66,26 @@ export async function publishReview(options: PublishOptions): Promise<PublishRes
 
   const baseClient = new GitHubClient(baseIdentity.token, apiUrl, logger);
 
-  // Existing fingerprints let a re-run on a new commit stay quiet about what it
-  // already said, instead of repeating every comment on every push.
-  const existing = config.publish.skipDuplicates
+  const existing = config.publish.minimizeStale
     ? await listReviewComments(baseClient, owner, repo, number).catch((error) => {
         logger.warn(`could not list existing comments: ${String(error)}`);
         return [];
       })
     : [];
-  const seen = new Set(existing.map((comment) => parseFingerprint(comment.body)).filter((fp): fp is string => !!fp));
+
+  // A dismissal is the author's decision, so it is enforced here rather than left
+  // to the mediator's judgement — the model advises, this gate is absolute.
+  const dismissed = new Set(prior.filter((entry) => entry.dismissed).map((entry) => entry.fingerprint));
+  const seen = new Set(prior.map((entry) => entry.fingerprint));
 
   const fresh: Finding[] = [];
   for (const finding of outcome.inline) {
-    if (seen.has(finding.fingerprint)) result.skipped.push(finding);
+    if (dismissed.has(finding.fingerprint)) result.dismissed.push(finding);
+    else if (config.publish.skipDuplicates && seen.has(finding.fingerprint)) result.skipped.push(finding);
     else fresh.push(finding);
+  }
+  if (result.dismissed.length > 0) {
+    logger.info(`${result.dismissed.length} findings suppressed — closed by the author earlier`);
   }
 
   const byAgent = new Map<string, Finding[]>();
@@ -117,7 +129,7 @@ export async function publishReview(options: PublishOptions): Promise<PublishRes
   // The gate speaks last, and it is the only identity allowed to change the state.
   const summaryAgentId = config.publish.summaryAgent;
   const summaryIdentity = identities.get(summaryAgentId) ?? identities.get('__fallback__');
-  const summaryBody = makeSummary(result.skipped);
+  const summaryBody = makeSummary(result.skipped, result.dismissed);
 
   if (summaryIdentity) {
     const client = new GitHubClient(summaryIdentity.token, apiUrl, logger);

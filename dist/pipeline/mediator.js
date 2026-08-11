@@ -19,7 +19,7 @@ export async function mediate(options) {
         return { summary: '조정자 비활성화 — 정책 게이트만 적용했습니다.', ok: true, error: null };
     }
     const mediator = registry.get('mediator');
-    const prompt = buildMediatorPrompt(mediator?.persona ?? '', findings, registry, context);
+    const prompt = buildMediatorPrompt(mediator?.persona ?? '', findings, registry, context, options.prior);
     persist(context.runDir, 'prompts/mediator.md', prompt);
     // Engine settings for this stage may be written under either `mediator:` or
     // `agents.mediator:`. Honour both so neither is a silent no-op; `mediator:` wins.
@@ -83,7 +83,41 @@ export function sanitizeSummary(summary) {
 function stripUndefined(value) {
     return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined));
 }
-function buildMediatorPrompt(persona, findings, registry, context) {
+/**
+ * Prior review state, rendered for the judge.
+ *
+ * Fingerprint equality cannot catch a rephrased duplicate — measured on real runs,
+ * three comments describing the same concern shared almost no wording. A judge
+ * that can read both can; that is why this lands here and not in a string matcher.
+ */
+function renderPrior(prior) {
+    if (prior.length === 0)
+        return '';
+    const dismissed = prior.filter((entry) => entry.dismissed);
+    const standing = prior.filter((entry) => !entry.dismissed);
+    const lines = ['## 이 PR에 이미 게시된 리뷰 (같은 문제를 다시 올리지 마라)'];
+    if (standing.length > 0) {
+        lines.push('\n### 아직 열려 있는 지적');
+        for (const entry of standing) {
+            lines.push(`- \`${entry.agent}\` ${entry.path ?? '?'}${entry.line ? `:${entry.line}` : ''} — ${entry.title}${entry.outdated ? ' (해당 라인은 이후 커밋에서 바뀜)' : ''}`);
+        }
+    }
+    if (dismissed.length > 0) {
+        lines.push('\n### 작성자가 닫은 지적 (스레드 resolve 또는 👎)');
+        for (const entry of dismissed) {
+            lines.push(`- \`${entry.agent}\` ${entry.path ?? '?'} — ${entry.title}`);
+        }
+    }
+    lines.push(`
+판정 규칙:
+- 위 목록 중 **어떤 항목과 같은 문제**를 이번 finding이 다시 제기하고 있다면, 표현이 달라도 DROP하라.
+  제목이 달라도, 분류가 달라도, 지적 위치가 달라도 마찬가지다. 문제의 실체가 같은지로 판단하라.
+- **작성자가 닫은 지적**은 반영하지 않기로 한 결정이다. 같은 문제를 다시 올리는 것은 무조건 DROP이다.
+  더 심각한 새 근거가 생겼더라도 이번 PR에서는 다시 제기하지 마라.
+- 이전 지적을 실제로 **고친 결과** 새로 생긴 문제는 새 문제다. 그건 DROP하지 마라.`);
+    return `${lines.join('\n')}\n\n---\n\n`;
+}
+function buildMediatorPrompt(persona, findings, registry, context, prior) {
     const rendered = findings
         .map((finding) => {
         const agent = registry.get(finding.owner);
@@ -125,7 +159,7 @@ ${HARNESS_RULES}
 저장소 \`${context.pr.owner}/${context.pr.repo}\` PR #${context.pr.number} — "${context.pr.title}"
 변경 파일 ${context.changedFiles.length}개.
 
-아래는 전문 에이전트들이 제출하고 검증을 통과한 finding 목록이다. **이 목록에 있는 id만 판정하라.**
+${renderPrior(prior)}아래는 전문 에이전트들이 제출하고 검증을 통과한 finding 목록이다. **이 목록에 있는 id만 판정하라.**
 
 ${rendered}
 

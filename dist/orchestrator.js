@@ -12,9 +12,9 @@ import { mediate } from "./pipeline/mediator.js";
 import { applyPolicy } from "./pipeline/policy.js";
 import { route } from "./pipeline/router.js";
 import { verifyFindings } from "./pipeline/verify.js";
-import { fetchPullRequest, GitHubClient } from "./publish/github.js";
+import { fetchPriorReview, fetchPullRequest, GitHubClient } from "./publish/github.js";
 import { publishReview } from "./publish/publish.js";
-import { renderSummary } from "./publish/render.js";
+import { parseMarker, parseTitle, renderSummary } from "./publish/render.js";
 import { shortId } from "./util/text.js";
 import { createLogger, timedStage } from "./util/logger.js";
 /**
@@ -32,7 +32,7 @@ export async function runReview(options) {
     const { config: loaded, path: configPath } = loadConfig(workdir, options.configPath);
     const config = applyOverrides(loaded, options);
     logger.info(configPath ? `config: ${configPath}` : 'config: built-in defaults');
-    const registry = buildRegistry(config, workdir);
+    const registry = buildRegistry(config, workdir, logger);
     const token = options.token;
     const pr = options.prInfo ??
         (await (async () => {
@@ -50,7 +50,16 @@ export async function runReview(options) {
     const { context, parsed, ignoredFiles } = await timedStage('컨텍스트 수집', stageTimings, logger, () => collectContext({ config, workdir, runDir, runId, pr, ...(options.baseOverride ? { baseOverride: options.baseOverride } : {}), logger }));
     if (ignoredFiles.length > 0)
         logger.debug(`ignored: ${ignoredFiles.join(', ')}`);
-    const blackboard = renderBlackboard(context, config);
+    // Fetched once: the mediator uses it to drop rephrased repeats, and publishing
+    // uses it to honour anything the author already closed.
+    const prior = token
+        ? await fetchPriorReview(new GitHubClient(token, options.apiUrl, logger), pr.owner, pr.repo, pr.number, parseMarker, parseTitle, logger)
+        : [];
+    persist(runDir, 'prior-review.json', prior);
+    if (prior.length > 0) {
+        logger.info(`prior review: ${prior.length} findings, ${prior.filter((p) => p.dismissed).length} closed by the author`);
+    }
+    const blackboard = renderBlackboard(context, config, prior);
     persist(runDir, 'blackboard.md', blackboard);
     const routing = route(config, registry, context.changedFiles, context.diff);
     persist(runDir, 'routing.json', {
@@ -87,7 +96,7 @@ export async function runReview(options) {
             logger.warn(`debate stage failed: ${String(error)}`);
         }
     });
-    const mediation = await timedStage('조정자 판정', stageTimings, logger, () => mediate({ config, pool, registry, context, findings, logger }));
+    const mediation = await timedStage('조정자 판정', stageTimings, logger, () => mediate({ config, pool, registry, context, findings, prior, logger }));
     if (!mediation.ok && mediation.error)
         degraded.push(`조정자 실패: ${mediation.error}`);
     const outcome = applyPolicy(config, registry, findings);
@@ -105,10 +114,11 @@ export async function runReview(options) {
         registry,
         outcome,
         fallbackToken: token,
+        prior,
         ...(options.apiUrl ? { apiUrl: options.apiUrl } : {}),
         dryRun: options.dryRun,
         logger,
-        makeSummary: (skipped) => renderSummary({
+        makeSummary: (skipped, dismissed) => renderSummary({
             config,
             context,
             registry,
@@ -117,6 +127,7 @@ export async function runReview(options) {
             outcome,
             mediatorSummary: mediation.summary,
             skipped,
+            dismissed,
             durationMs: Date.now() - startedAt,
             degraded,
         }),

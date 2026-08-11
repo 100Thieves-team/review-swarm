@@ -1,8 +1,10 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { agentClass, type SwarmConfig } from '../config.ts';
 import type { AgentClass } from '../types.ts';
 import { PERSONAS } from './personas.ts';
+import type { Logger } from '../util/logger.ts';
+import { truncate } from '../util/text.ts';
 
 export interface AgentDefinition {
   id: string;
@@ -14,6 +16,8 @@ export interface AgentDefinition {
   klass: AgentClass;
   persona: string;
   focus: string;
+  /** Contents of `knowledgeFiles`, already budgeted. Empty when none configured. */
+  knowledge: string;
 }
 
 const METADATA: Record<string, { displayName: string; emoji: string; focus: string }> = {
@@ -54,7 +58,11 @@ const METADATA: Record<string, { displayName: string; emoji: string; focus: stri
   },
 };
 
-export function buildRegistry(config: SwarmConfig, workdir: string): Map<string, AgentDefinition> {
+export function buildRegistry(
+  config: SwarmConfig,
+  workdir: string,
+  logger?: Logger,
+): Map<string, AgentDefinition> {
   const registry = new Map<string, AgentDefinition>();
 
   for (const [id, agent] of Object.entries(config.agents)) {
@@ -80,10 +88,53 @@ export function buildRegistry(config: SwarmConfig, workdir: string): Map<string,
       klass: agentClass(config, id),
       persona,
       focus: meta.focus,
+      knowledge: readKnowledge(id, agent.knowledgeFiles ?? [], workdir, config.context.maxAgentKnowledgeChars, logger),
     });
   }
 
   return registry;
+}
+
+/**
+ * Load one agent's knowledge files.
+ *
+ * A configured file that has gone missing is reported rather than skipped: the
+ * whole point of this channel is knowledge the model cannot recover on its own,
+ * so losing it silently is the worst failure mode.
+ */
+function readKnowledge(
+  agentId: string,
+  files: readonly string[],
+  workdir: string,
+  maxChars: number,
+  logger?: Logger,
+): string {
+  if (files.length === 0) return '';
+
+  const sections: string[] = [];
+  let budget = maxChars;
+
+  for (const relative of files) {
+    if (budget <= 0) {
+      logger?.warn(`agents.${agentId}.knowledgeFiles: budget exhausted before "${relative}"`);
+      break;
+    }
+    const path = resolve(workdir, relative);
+    if (!existsSync(path)) {
+      logger?.warn(`agents.${agentId}.knowledgeFiles not found: ${relative}`);
+      continue;
+    }
+    try {
+      const body = truncate(readFileSync(path, 'utf8').trim(), budget);
+      if (!body) continue;
+      sections.push(`### ${relative}\n${body}`);
+      budget -= body.length;
+    } catch (error) {
+      logger?.warn(`agents.${agentId}.knowledgeFiles unreadable "${relative}": ${String(error)}`);
+    }
+  }
+
+  return sections.join('\n\n');
 }
 
 /** Experts are everyone who produces findings — the mediator only judges them. */
